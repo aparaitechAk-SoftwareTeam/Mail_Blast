@@ -239,41 +239,61 @@ const Settings = () => {
 
             {/* Send Real Test Email Diagnostic Card */}
             <div className="card border-0 shadow-sm rounded-4 bg-surface p-4">
-              <div className="d-flex align-items-center gap-2 mb-3">
-                <Mail size={20} className="text-primary" />
-                <h6 className="fw-bold text-dark m-0">Send Test Email Diagnostic</h6>
-              </div>
-              <p className="text-muted small mb-3">
-                Dispatch a minimal test email through the active Brevo transporter to verify real SMTP relay delivery.
-              </p>
-
-              <form onSubmit={handleSendTestEmail} className="row g-2 align-items-end mb-3">
-                <div className="col-12 col-md-8">
-                  <Input
-                    label="Test Recipient Mailbox"
-                    name="testRecipient"
-                    type="email"
-                    value={testRecipient}
-                    onChange={(e) => setTestRecipient(e.target.value)}
-                    placeholder="nileshrajpure037@gmail.com"
-                    className="m-0"
-                    required
-                  />
+              <div className="d-flex align-items-center justify-content-between mb-3 pb-3 border-bottom flex-wrap gap-2">
+                <div className="d-flex align-items-center gap-2.5">
+                  <div className="p-2.5 rounded-3 bg-primary-subtle text-primary">
+                    <Mail size={20} />
+                  </div>
+                  <div>
+                    <div className="d-flex align-items-center gap-2 flex-wrap">
+                      <h5 className="fw-bold text-dark m-0">Send Test Email Diagnostic</h5>
+                      <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-0.5 rounded-pill fs-9">
+                        Verify SMTP Delivery
+                      </span>
+                    </div>
+                    <p className="text-muted small m-0 mt-0.5">
+                      Dispatch a minimal test email through the active Brevo transporter to verify real SMTP relay delivery.
+                    </p>
+                  </div>
                 </div>
-                <div className="col-12 col-md-4">
-                  <Button type="submit" variant="outline" icon={Send} className="w-100" loading={sendingTest ? 'Sending...' : false}>
-                    Send Test Email
-                  </Button>
+              </div>
+
+              <form onSubmit={handleSendTestEmail} className="mb-3">
+                <div className="d-flex flex-column flex-sm-row align-items-stretch align-items-sm-end gap-3">
+                  <div className="flex-grow-1">
+                    <Input
+                      label="Test Recipient Mailbox"
+                      name="testRecipient"
+                      type="email"
+                      value={testRecipient}
+                      onChange={(e) => setTestRecipient(e.target.value)}
+                      placeholder="nileshrajpure037@gmail.com"
+                      className="m-0"
+                      required
+                    />
+                  </div>
+                  <div className="flex-shrink-0">
+                    <Button 
+                      type="submit" 
+                      variant="primary" 
+                      icon={Send} 
+                      className="w-100 py-2.5 px-4 rounded-3" 
+                      style={{ minWidth: '170px' }}
+                      loading={sendingTest ? 'Sending...' : false}
+                    >
+                      Send Test Email
+                    </Button>
+                  </div>
                 </div>
               </form>
 
               {testDiagnosticResult && (
-                <div className="p-3 bg-success-subtle border border-success-subtle rounded-3 text-dark fs-8">
-                  <div className="d-flex align-items-center gap-1.5 text-success fw-bold mb-2">
+                <div className="p-3.5 bg-success-subtle border border-success-subtle rounded-3 text-dark fs-8">
+                  <div className="d-flex align-items-center gap-1.5 text-success fw-bold mb-2.5">
                     <CheckCircle2 size={16} />
                     <span>SMTP Accepted the Test Email</span>
                   </div>
-                  <div className="row g-2 mb-2">
+                  <div className="row g-2 mb-2.5">
                     <div className="col-12 col-sm-6">
                       <span className="text-muted d-block fs-9">Recipient:</span>
                       <span className="fw-semibold text-break">{testDiagnosticResult.recipient}</span>
@@ -284,14 +304,14 @@ const Settings = () => {
                     </div>
                     <div className="col-12">
                       <span className="text-muted d-block fs-9">Message ID:</span>
-                      <code className="text-dark bg-white px-1.5 py-0.5 rounded border d-block text-break">{testDiagnosticResult.messageId}</code>
+                      <code className="text-dark bg-white px-2 py-1 rounded border d-block text-break fs-9">{testDiagnosticResult.messageId}</code>
                     </div>
                     <div className="col-12">
                       <span className="text-muted d-block fs-9">SMTP Server Response:</span>
-                      <code className="text-muted bg-white px-1.5 py-0.5 rounded border d-block text-break">{testDiagnosticResult.smtpResponse}</code>
+                      <code className="text-muted bg-white px-2 py-1 rounded border d-block text-break fs-9">{testDiagnosticResult.smtpResponse}</code>
                     </div>
                   </div>
-                  <div className="p-2 bg-white rounded border text-muted fs-9">
+                  <div className="p-2.5 bg-white rounded-3 border text-muted fs-9">
                     <strong>Important:</strong> SMTP accepted the email. Final inbox placement depends on recipient mail provider filters.
                   </div>
                 </div>
