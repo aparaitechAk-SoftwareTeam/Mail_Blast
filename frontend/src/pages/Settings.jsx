@@ -311,39 +311,42 @@ const Settings = () => {
               </p>
 
               <div className="space-y-3 small">
-                <div className="p-3 bg-light rounded-3 mb-2 d-flex align-items-center justify-content-between">
+                <div className="p-3 bg-light rounded-3 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
                   <span className="text-muted">SMTP Provider:</span>
-                  <span className="fw-semibold text-dark">{smtpConfig.provider || 'Brevo SMTP Relay'}</span>
+                  <span className="fw-semibold text-dark text-break">{smtpConfig.provider || 'Brevo SMTP Relay'}</span>
                 </div>
 
-                <div className="p-3 bg-light rounded-3 mb-2 d-flex align-items-center justify-content-between">
+                <div className="p-3 bg-light rounded-3 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
                   <span className="text-muted">Host Server:</span>
-                  <code className="text-dark bg-white px-1.5 py-0.5 rounded border fs-9">{smtpConfig.host}</code>
+                  <code className="text-dark bg-white px-1.5 py-0.5 rounded border fs-9 text-break">{smtpConfig.host}</code>
                 </div>
 
-                <div className="p-3 bg-light rounded-3 mb-2 d-flex align-items-center justify-content-between">
+                <div className="p-3 bg-light rounded-3 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
                   <span className="text-muted">Port & Protocol:</span>
-                  <span className="badge bg-primary-subtle text-primary fw-bold">{smtpConfig.port} ({smtpConfig.securityLabel || 'STARTTLS'})</span>
+                  <span className="badge bg-primary-subtle text-primary fw-bold text-wrap">{smtpConfig.port} ({smtpConfig.securityLabel || 'STARTTLS'})</span>
                 </div>
 
-                <div className="p-3 bg-light rounded-3 mb-2 d-flex align-items-center justify-content-between">
+                <div className="p-3 bg-light rounded-3 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
                   <span className="text-muted">Sender Display:</span>
-                  <span className="fw-semibold text-dark text-truncate" style={{ maxWidth: '160px' }}>{smtpConfig.fromName}</span>
+                  <span className="fw-semibold text-dark text-break">{smtpConfig.fromName}</span>
                 </div>
 
-                <div className="p-3 bg-light rounded-3 mb-2 d-flex align-items-center justify-content-between">
+                <div className="p-3 bg-light rounded-3 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
                   <span className="text-muted">Sender Email:</span>
-                  <code className="text-dark bg-white px-1.5 py-0.5 rounded border fs-9 text-truncate" style={{ maxWidth: '160px' }}>{smtpConfig.fromEmail}</code>
+                  <code className="text-dark bg-white px-1.5 py-0.5 rounded border fs-9 text-break" style={{ wordBreak: 'break-all' }}>{smtpConfig.fromEmail}</code>
                 </div>
 
-                <div className="p-3 bg-light rounded-3 mb-2 d-flex align-items-center justify-content-between">
-                  <span className="text-muted">Domain Auth Status:</span>
-                  <span className={`badge px-2 py-1 rounded-pill ${smtpConfig.isCustomDomainAuthenticated ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-warning-subtle text-warning-emphasis border border-warning-subtle'}`}>
+                <div className="p-3 bg-light rounded-3 mb-2 d-flex flex-column flex-sm-row align-items-start align-items-sm-center justify-content-between gap-2">
+                  <span className="text-muted flex-shrink-0">Domain Auth Status:</span>
+                  <span 
+                    className={`badge px-2.5 py-1.5 rounded-2 text-wrap text-start ${smtpConfig.isCustomDomainAuthenticated ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-warning-subtle text-warning-emphasis border border-warning-subtle'}`}
+                    style={{ whiteSpace: 'normal', lineHeight: '1.45', maxWidth: '100%', wordBreak: 'break-word' }}
+                  >
                     {smtpConfig.domainStatus || 'Checking...'}
                   </span>
                 </div>
 
-                <div className="p-3 bg-light rounded-3 d-flex align-items-center justify-content-between">
+                <div className="p-3 bg-light rounded-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
                   <div className="d-flex align-items-center gap-2">
                     <Activity size={16} className="text-success" />
                     <span className="fw-semibold text-dark">Connection Status</span>
