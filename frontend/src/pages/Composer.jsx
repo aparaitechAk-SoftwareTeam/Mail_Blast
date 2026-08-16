@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Navbar from '../components/common/Navbar';
 import { createCampaign, sendTestEmail, fetchSmtpGateways } from '../services/campaignService';
 import { fetchStudents } from '../services/studentService';
@@ -7,7 +7,7 @@ import { fetchTemplates } from '../services/templateService';
 import { PERSONALIZATION_TAGS } from '../utils/constants';
 import { useToast } from '../context/ToastContext';
 import { formatDate } from '../utils/formatters';
-import { Send, Eye, Monitor, Smartphone, Mail, Sparkles, Filter, CheckCircle2, Users, Calendar, ShieldAlert, List, XCircle, RotateCcw, Server } from 'lucide-react';
+import { Send, Eye, Monitor, Smartphone, Mail, Sparkles, Filter, CheckCircle2, Users, Calendar, ShieldAlert, List, XCircle, RotateCcw, Server, Check } from 'lucide-react';
 
 import Button from '../components/ui/Button';
 import { Input, Select, Textarea } from '../components/ui/Input';
@@ -22,6 +22,7 @@ const SAMPLE_STUDENTS = [
 
 const Composer = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
 
   // Campaign Form State
@@ -46,6 +47,7 @@ const Composer = () => {
   const [recipientCount, setRecipientCount] = useState(0);
   const [templates, setTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [loadedTemplateBanner, setLoadedTemplateBanner] = useState('');
 
   // Modals state
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -68,12 +70,42 @@ const Composer = () => {
 
   useEffect(() => {
     document.title = 'Aparaitech | Email Composer';
-    loadTemplates();
     loadGatewaysData();
 
     // Ensure any legacy composer draft is purged on mount so composer starts completely fresh
     localStorage.removeItem(DRAFT_KEY);
-  }, []);
+
+    // Read template passed from Templates page via React Router state or sessionStorage
+    let targetTemplate = location.state?.template;
+    if (!targetTemplate) {
+      try {
+        const stored = sessionStorage.getItem('composerSelectedTemplate');
+        if (stored) {
+          targetTemplate = JSON.parse(stored);
+        }
+      } catch (e) {
+        console.error('Error parsing stored template:', e);
+      }
+    }
+
+    if (targetTemplate) {
+      const tId = targetTemplate.id || targetTemplate._id || '';
+      const tName = targetTemplate.name || targetTemplate.title || '';
+      const tSub = targetTemplate.subject || targetTemplate.defaultSubject || '';
+      const tHtml = targetTemplate.htmlBody || targetTemplate.bodyContent || targetTemplate.bodyHtml || targetTemplate.body || '';
+
+      if (tName) setTitle(tName);
+      if (tSub) setSubject(tSub);
+      if (tHtml) setBodyHtml(tHtml);
+      if (tId) setSelectedTemplateId(tId);
+      if (tName) setLoadedTemplateBanner(tName);
+
+      toast.success(`Template loaded: ${tName}`);
+      sessionStorage.removeItem('composerSelectedTemplate');
+    }
+
+    loadTemplates();
+  }, [location]);
 
   const loadGatewaysData = async () => {
     try {
@@ -125,12 +157,13 @@ const Composer = () => {
   const handleSelectTemplate = (tplId) => {
     setSelectedTemplateId(tplId);
     if (!tplId) return;
-    const tpl = templates.find(t => String(t._id) === String(tplId));
+    const tpl = templates.find(t => String(t._id || t.id) === String(tplId));
     if (tpl) {
-      setTitle(tpl.name);
-      setSubject(tpl.subject);
-      setBodyHtml(tpl.bodyHtml);
-      toast.info(`Loaded template: ${tpl.name}`);
+      setTitle(tpl.name || tpl.title || '');
+      setSubject(tpl.subject || tpl.defaultSubject || '');
+      setBodyHtml(tpl.bodyHtml || tpl.bodyContent || tpl.body || '');
+      setLoadedTemplateBanner(tpl.name || tpl.title || '');
+      toast.info(`Loaded template: ${tpl.name || tpl.title}`);
     }
   };
 
@@ -284,18 +317,30 @@ const Composer = () => {
                     </div>
                   </div>
 
-                  {templates.length > 0 && (
-                    <div className="d-flex align-items-center gap-2">
+                  <div className="d-flex align-items-center gap-2 flex-wrap">
+                    {loadedTemplateBanner && (
+                      <span className="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1.5 rounded-pill fs-9 fw-semibold d-inline-flex align-items-center gap-1">
+                        <Check size={12} strokeWidth={3} /> Template loaded: {loadedTemplateBanner}
+                      </span>
+                    )}
+
+                    {templates.length > 0 && (
                       <Select
                         name="template"
                         value={selectedTemplateId}
                         onChange={(e) => handleSelectTemplate(e.target.value)}
-                        options={templates.map(t => ({ label: t.name, value: t._id }))}
+                        options={(() => {
+                          const opts = templates.map(t => ({ label: t.name, value: t._id }));
+                          if (selectedTemplateId && !opts.some(o => String(o.value) === String(selectedTemplateId))) {
+                            opts.unshift({ label: loadedTemplateBanner || 'Selected Template', value: selectedTemplateId });
+                          }
+                          return opts;
+                        })()}
                         placeholder="Load Prebuilt Template..."
                         className="m-0 w-auto fs-9"
                       />
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
 
                 <div className="mb-4">

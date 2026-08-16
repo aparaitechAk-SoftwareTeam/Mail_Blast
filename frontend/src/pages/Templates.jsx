@@ -100,6 +100,25 @@ const Templates = () => {
     }
   };
 
+  const handleUseInComposer = (tpl) => {
+    const templateData = {
+      id: tpl._id || tpl.id,
+      name: tpl.name,
+      category: tpl.category,
+      subject: tpl.subject || tpl.defaultSubject,
+      htmlBody: tpl.bodyHtml || tpl.bodyContent || tpl.body
+    };
+
+    sessionStorage.setItem('composerSelectedTemplate', JSON.stringify(templateData));
+
+    navigate('/composer', {
+      state: {
+        fromTemplate: true,
+        template: templateData
+      }
+    });
+  };
+
   return (
     <div>
       <Navbar title="Recruitment Template Library" />
@@ -164,7 +183,7 @@ const Templates = () => {
                       variant="primary"
                       size="sm"
                       icon={Send}
-                      onClick={() => navigate('/composer')}
+                      onClick={() => handleUseInComposer(tpl)}
                     >
                       Use in Composer
                     </Button>
