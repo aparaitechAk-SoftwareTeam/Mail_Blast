@@ -324,66 +324,100 @@ const Sidebar = () => {
           {/* Profile Card / Controls */}
           {collapsed ? (
             <div className="d-flex justify-content-center">
-              <button 
-                onClick={logout}
-                className="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white shadow-sm border-0 cursor-pointer"
-                style={{ 
-                  width: '42px', 
-                  height: '42px', 
-                  background: 'linear-gradient(135deg, #4F46E5 0%, #6366F1 100%)',
-                  fontSize: '0.9rem'
-                }}
-                data-tooltip={`Sign out (${user?.name || 'User'})`}
-                title="Sign out"
-              >
-                {getInitials(user?.name)}
-              </button>
+              <div className="position-relative">
+                <button 
+                  onClick={() => setShowProfileMenu(!showProfileMenu)}
+                  className="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white shadow-sm border-0 cursor-pointer position-relative"
+                  style={{ 
+                    width: '44px', 
+                    height: '44px', 
+                    background: 'linear-gradient(135deg, #4F46E5 0%, #6366F1 100%)',
+                    fontSize: '0.9rem',
+                    boxShadow: '0 0 0 2px rgba(255, 255, 255, 0.15)'
+                  }}
+                  data-tooltip={`${user?.name || 'Admin User'} (${user?.role || 'Admin'})`}
+                  title={user?.name || 'Admin User'}
+                >
+                  {getInitials(user?.name)}
+                </button>
+                {/* Active Online Indicator */}
+                <span 
+                  className="position-absolute bottom-0 end-0 p-1 bg-success rounded-circle"
+                  style={{ width: '10px', height: '10px', border: '2px solid #0B1220' }}
+                  title="Active Session"
+                />
+              </div>
             </div>
           ) : (
             <div>
               <div 
-                className="d-flex align-items-center justify-content-between p-2 rounded-3 cursor-pointer user-select-none"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer' }}
+                className="p-3 rounded-3 cursor-pointer user-select-none transition-all"
+                style={{ 
+                  background: 'rgba(255, 255, 255, 0.04)', 
+                  border: '1px solid rgba(255, 255, 255, 0.09)', 
+                  borderRadius: '14px' 
+                }}
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.07)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.16)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.09)';
+                }}
               >
-                <div className="d-flex align-items-center gap-2.5 overflow-hidden">
-                  <div 
-                    className="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white shadow-sm flex-shrink-0"
-                    style={{ 
-                      width: '40px', 
-                      height: '40px', 
-                      background: 'linear-gradient(135deg, #4F46E5 0%, #6366F1 100%)',
-                      fontSize: '0.85rem'
-                    }}
-                  >
-                    {getInitials(user?.name)}
-                  </div>
-                  <div className="overflow-hidden">
-                    <div className="text-white fw-bold small text-truncate" style={{ fontSize: '0.875rem' }}>
-                      {user?.name || 'Admin User'}
+                <div className="d-flex align-items-center justify-content-between gap-2.5">
+                  {/* Left: Avatar with Active Dot */}
+                  <div className="position-relative flex-shrink-0">
+                    <div 
+                      className="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white shadow-sm"
+                      style={{ 
+                        width: '46px', 
+                        height: '46px', 
+                        background: 'linear-gradient(135deg, #4F46E5 0%, #6366F1 100%)',
+                        fontSize: '0.9rem',
+                        boxShadow: '0 0 0 2px rgba(255, 255, 255, 0.15)'
+                      }}
+                    >
+                      {getInitials(user?.name)}
                     </div>
-                    <div className="small text-truncate" style={{ color: '#94A3B8', fontSize: '0.725rem' }}>
-                      {user?.email || 'admin@aparaitech.com'}
-                    </div>
+                    {/* Active Online Indicator */}
+                    <span 
+                      className="position-absolute bottom-0 end-0 p-1 bg-success rounded-circle"
+                      style={{ width: '10px', height: '10px', border: '2px solid #0B1220' }}
+                      title="Active Session"
+                    />
                   </div>
-                </div>
 
-                <div className="d-flex flex-column align-items-end gap-1 flex-shrink-0">
-                  <span 
-                    className="badge rounded-pill px-2 py-0.5"
-                    style={{ 
-                      fontSize: '0.625rem',
-                      fontWeight: 700,
-                      letterSpacing: '0.5px',
-                      textTransform: 'uppercase',
-                      background: roleStyle.bg,
-                      border: roleStyle.border,
-                      color: roleStyle.color
-                    }}
-                  >
-                    {user?.role || 'Admin'}
-                  </span>
-                  <ChevronUp size={14} style={{ color: '#94A3B8' }} />
+                  {/* Center: Identity Information */}
+                  <div className="flex-grow-1 overflow-hidden">
+                    <div className="d-flex align-items-center justify-content-between gap-1 mb-0.5">
+                      <span className="text-white fw-bold text-truncate" style={{ fontSize: '0.9rem', letterSpacing: '-0.01em' }}>
+                        {user?.name || 'Admin User'}
+                      </span>
+                      <span 
+                        className="badge rounded-pill px-2 py-0.5 flex-shrink-0"
+                        style={{ 
+                          fontSize: '0.625rem',
+                          fontWeight: 700,
+                          letterSpacing: '0.04em',
+                          textTransform: 'uppercase',
+                          background: roleStyle.bg,
+                          border: roleStyle.border,
+                          color: roleStyle.color
+                        }}
+                      >
+                        {user?.role || 'Admin'}
+                      </span>
+                    </div>
+                    <div className="d-flex align-items-center justify-content-between gap-1">
+                      <span className="text-truncate" style={{ color: '#94A3B8', fontSize: '0.775rem' }}>
+                        {user?.email || 'admin@aparaitech.com'}
+                      </span>
+                      <ChevronUp size={13} className="flex-shrink-0 transition-transform" style={{ color: '#94A3B8', transform: showProfileMenu ? 'rotate(180deg)' : 'rotate(0deg)' }} />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -394,7 +428,7 @@ const Sidebar = () => {
                 title="Sign Out"
                 aria-label="Sign Out"
               >
-                <LogOut size={16} />
+                <LogOut size={15} />
                 <span className="fw-semibold small">Sign out</span>
               </button>
             </div>

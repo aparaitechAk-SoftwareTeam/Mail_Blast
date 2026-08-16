@@ -133,15 +133,28 @@ const Settings = () => {
           <div className="col-12 col-lg-8">
             {/* Active Gateway Card */}
             <div className="card border-0 shadow-sm rounded-4 bg-surface p-4 mb-4">
-              <div className="d-flex align-items-center justify-content-between mb-4 pb-3 border-bottom flex-wrap gap-2">
+              {/* Header with Provider Badge */}
+              <div className="d-flex align-items-center justify-content-between pb-3 border-bottom flex-wrap gap-2 mb-3">
                 <div className="d-flex align-items-center gap-2.5">
                   <div className="p-2.5 rounded-3 bg-primary-subtle text-primary">
                     <Server size={20} />
                   </div>
                   <div>
                     <h5 className="fw-bold text-dark m-0">SMTP / Mail Transporter Setup</h5>
-                    <p className="text-muted small m-0">Outbound recruitment email gateway parameters (Brevo Production Relay)</p>
+                    <p className="text-muted small m-0 mt-0.5">Outbound recruitment email gateway parameters</p>
                   </div>
+                </div>
+
+                <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1 rounded-pill fs-9">
+                  Brevo Production Relay
+                </span>
+              </div>
+
+              {/* Dedicated Action Area: Test Connection */}
+              <div className="p-3 bg-light rounded-3 mb-4 d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-3">
+                <div className="d-flex align-items-center gap-2">
+                  <Activity size={16} className="text-primary flex-shrink-0" />
+                  <span className="text-muted fs-8">Verify active SMTP relay connection before dispatching email blasts.</span>
                 </div>
 
                 <Button
@@ -151,6 +164,7 @@ const Settings = () => {
                   icon={RefreshCw}
                   onClick={handleTestConnection}
                   loading={testingConnection ? 'Testing...' : false}
+                  className="flex-shrink-0"
                 >
                   Test Connection
                 </Button>

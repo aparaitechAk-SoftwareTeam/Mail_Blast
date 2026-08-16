@@ -1,4 +1,5 @@
 const Student = require('../models/Student');
+const Campaign = require('../models/Campaign');
 const { getIsConnected, getMemoryStore } = require('../config/db');
 const { logAudit } = require('../services/auditService');
 
@@ -12,6 +13,7 @@ const getStudents = async (req, res) => {
       minCgpa = '', 
       maxCgpa = '', 
       placementStatus = '', 
+      audienceMode = 'filtered',
       page = 1, 
       limit = 10 
     } = req.query;
@@ -24,6 +26,21 @@ const getStudents = async (req, res) => {
     if (isMongo) {
       const query = {};
 
+      let lastCampaign = null;
+      let hasPreviousCampaign = true;
+
+      if (audienceMode === 'new_since_last_campaign') {
+        lastCampaign = await Campaign.findOne({ status: 'Completed' }).sort({ completedAt: -1, createdAt: -1 });
+        if (lastCampaign) {
+          const baselineDate = lastCampaign.completedAt || lastCampaign.createdAt;
+          query.createdAt = { $gt: baselineDate };
+        } else {
+          hasPreviousCampaign = false;
+          // When no previous completed campaign exists, query impossible match
+          query._id = null;
+        }
+      }
+
       if (search) {
         query.$or = [
           { name: { $regex: search, $options: 'i' } },
@@ -32,19 +49,21 @@ const getStudents = async (req, res) => {
         ];
       }
 
-      if (college) query.college = college;
-      if (branch) query.branch = branch;
-      if (graduationYear) query.graduationYear = parseInt(graduationYear);
-      if (placementStatus) query.placementStatus = placementStatus;
+      if (audienceMode !== 'all') {
+        if (college) query.college = college;
+        if (branch) query.branch = branch;
+        if (graduationYear) query.graduationYear = parseInt(graduationYear);
+        if (placementStatus) query.placementStatus = placementStatus;
 
-      if (minCgpa || maxCgpa) {
-        query.cgpa = {};
-        if (minCgpa) query.cgpa.$gte = parseFloat(minCgpa);
-        if (maxCgpa) query.cgpa.$lte = parseFloat(maxCgpa);
+        if (minCgpa || maxCgpa) {
+          query.cgpa = {};
+          if (minCgpa) query.cgpa.$gte = parseFloat(minCgpa);
+          if (maxCgpa) query.cgpa.$lte = parseFloat(maxCgpa);
+        }
       }
 
-      const total = await Student.countDocuments(query);
-      const students = await Student.find(query)
+      const total = query._id === null ? 0 : await Student.countDocuments(query);
+      const students = query._id === null ? [] : await Student.find(query)
         .sort({ createdAt: -1 })
         .skip((pageNum - 1) * limitNum)
         .limit(limitNum);
@@ -53,15 +72,40 @@ const getStudents = async (req, res) => {
       const branches = await Student.distinct('branch');
       const years = await Student.distinct('graduationYear');
 
+      if (!lastCampaign && audienceMode !== 'new_since_last_campaign') {
+        lastCampaign = await Campaign.findOne({ status: 'Completed' }).sort({ completedAt: -1, createdAt: -1 });
+      }
+
       return res.json({
         students,
         total,
         page: pageNum,
-        totalPages: Math.ceil(total / limitNum),
-        meta: { colleges, branches, years }
+        totalPages: Math.ceil(total / limitNum) || 1,
+        meta: { 
+          colleges, 
+          branches, 
+          years,
+          hasPreviousCampaign: Boolean(lastCampaign),
+          lastCampaign: lastCampaign ? {
+            _id: lastCampaign._id,
+            title: lastCampaign.title,
+            completedAt: lastCampaign.completedAt || lastCampaign.createdAt
+          } : null
+        }
       });
     } else {
       let filtered = [...store.students];
+      let lastCampaign = store.campaigns.find(c => c.status === 'Completed');
+      let hasPreviousCampaign = Boolean(lastCampaign);
+
+      if (audienceMode === 'new_since_last_campaign') {
+        if (lastCampaign) {
+          const baselineDate = new Date(lastCampaign.completedAt || lastCampaign.createdAt);
+          filtered = filtered.filter(st => new Date(st.createdAt || Date.now()) > baselineDate);
+        } else {
+          filtered = [];
+        }
+      }
 
       if (search) {
         const s = search.toLowerCase();
@@ -72,12 +116,14 @@ const getStudents = async (req, res) => {
         );
       }
 
-      if (college) filtered = filtered.filter(st => st.college === college);
-      if (branch) filtered = filtered.filter(st => st.branch === branch);
-      if (graduationYear) filtered = filtered.filter(st => st.graduationYear === parseInt(graduationYear));
-      if (placementStatus) filtered = filtered.filter(st => st.placementStatus === placementStatus);
-      if (minCgpa) filtered = filtered.filter(st => st.cgpa >= parseFloat(minCgpa));
-      if (maxCgpa) filtered = filtered.filter(st => st.cgpa <= parseFloat(maxCgpa));
+      if (audienceMode !== 'all') {
+        if (college) filtered = filtered.filter(st => st.college === college);
+        if (branch) filtered = filtered.filter(st => st.branch === branch);
+        if (graduationYear) filtered = filtered.filter(st => st.graduationYear === parseInt(graduationYear));
+        if (placementStatus) filtered = filtered.filter(st => st.placementStatus === placementStatus);
+        if (minCgpa) filtered = filtered.filter(st => st.cgpa >= parseFloat(minCgpa));
+        if (maxCgpa) filtered = filtered.filter(st => st.cgpa <= parseFloat(maxCgpa));
+      }
 
       const total = filtered.length;
       const startIndex = (pageNum - 1) * limitNum;
@@ -91,8 +137,18 @@ const getStudents = async (req, res) => {
         students,
         total,
         page: pageNum,
-        totalPages: Math.ceil(total / limitNum),
-        meta: { colleges, branches, years }
+        totalPages: Math.ceil(total / limitNum) || 1,
+        meta: { 
+          colleges, 
+          branches, 
+          years,
+          hasPreviousCampaign,
+          lastCampaign: lastCampaign ? {
+            _id: lastCampaign._id,
+            title: lastCampaign.title,
+            completedAt: lastCampaign.completedAt || lastCampaign.createdAt
+          } : null
+        }
       });
     }
   } catch (error) {

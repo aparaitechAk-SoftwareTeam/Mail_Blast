@@ -14,30 +14,27 @@ import {
   Send, 
   CheckCircle2, 
   AlertCircle, 
-  PlusCircle, 
   Upload, 
   ArrowRight,
   TrendingUp,
-  Activity,
   Zap,
   UserPlus,
   BarChart2,
   RefreshCw,
   Sparkles,
-  History,
   Mail,
   Building2,
-  Briefcase,
   Download,
   ExternalLink,
   GraduationCap,
   RotateCw,
   Clock
 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid, LabelList } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { formatDate } from '../utils/formatters';
 import { exportToCSV } from '../utils/exportUtils';
 import { RefreshContext } from '../context/RefreshContext';
+import InstitutionInsights from '../components/analytics/InstitutionInsights';
 
 const Dashboard = () => {
   const { user } = useContext(AuthContext);
@@ -45,11 +42,11 @@ const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [timeFilter, setTimeFilter] = useState('All Time');
+  const [timeFilter, setTimeFilter] = useState('This Month');
   const navigate = useNavigate();
 
   useEffect(() => {
-    document.title = 'Aparaitech | Dashboard';
+    document.title = 'Aparaitech | Recruitment Dashboard';
   }, []);
 
   const loadData = async () => {
@@ -72,40 +69,6 @@ const Dashboard = () => {
 
   const { summary, collegeDistribution = [], recentCampaigns = [] } = stats || {};
 
-  const formattedDistribution = React.useMemo(() => {
-    if (!collegeDistribution || !Array.isArray(collegeDistribution)) return [];
-    return [...collegeDistribution]
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-  }, [collegeDistribution]);
-
-  const CustomCollegeTooltip = ({ active, payload }) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div 
-          className="card border-0 shadow-lg p-3 rounded-3 bg-surface"
-          style={{ border: '1px solid var(--border)', minWidth: '220px' }}
-        >
-          <div className="fw-bold text-dark fs-7 mb-1">{data.college}</div>
-          <div className="d-flex align-items-center justify-content-between text-muted fs-8">
-            <span>Student Candidates:</span>
-            <span className="fw-bold text-primary fs-7">{data.count}</span>
-          </div>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  const truncateCollegeName = (name) => {
-    if (!name) return '';
-    if (name.length > 24) {
-      return name.substring(0, 22) + '...';
-    }
-    return name;
-  };
-
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good morning';
@@ -124,21 +87,31 @@ const Dashboard = () => {
 
   const totalProcessed = (summary?.totalEmailsSent || 0) + (summary?.totalFailedEmails || 0);
 
+  const sentPercentage = totalProcessed > 0 
+    ? Math.round(((summary?.totalEmailsSent || 0) / totalProcessed) * 100) 
+    : 100;
+
+  const failedPercentage = totalProcessed > 0 
+    ? Math.round(((summary?.totalFailedEmails || 0) / totalProcessed) * 100) 
+    : 0;
+
   const pieData = totalProcessed > 0 ? [
     { name: 'Sent Successfully', value: summary?.totalEmailsSent || 0 },
-    { name: 'Failed', value: summary?.totalFailedEmails || 0 }
-  ] : [];
+    { name: 'Failed Deliveries', value: summary?.totalFailedEmails || 0 }
+  ] : [
+    { name: 'No Campaign Data', value: 1 }
+  ];
 
   return (
     <div>
       <Navbar title="Recruitment Dashboard" />
 
       <div className="page-container">
-        {/* Compact Operational System Status & Refresh Bar */}
-        <div className="card border-0 shadow-sm rounded-4 bg-surface p-3 mb-4">
+        {/* Operational System Status & Refresh Bar */}
+        <div className="card border shadow-sm rounded-4 bg-surface p-3 mb-4" style={{ borderColor: 'var(--border, #E2E8F0)' }}>
           <div className="d-flex align-items-center justify-content-between flex-wrap gap-2.5">
             <div className="d-flex align-items-center gap-2">
-              <span className="badge bg-success-subtle text-success rounded-pill px-2.5 py-1 small fw-semibold d-inline-flex align-items-center gap-1.5">
+              <span className="badge bg-success-subtle text-success rounded-pill px-2.5 py-1 small fw-semibold d-inline-flex align-items-center gap-1.5 border border-success-subtle">
                 <span className="p-1 bg-success rounded-circle animate-pulse" />
                 Live Sync
               </span>
@@ -162,6 +135,7 @@ const Dashboard = () => {
                 value={intervalMs}
                 onChange={(e) => setIntervalMs(parseInt(e.target.value, 10))}
                 title="Auto-Refresh Interval"
+                aria-label="Auto-Refresh Interval"
               >
                 <option value={0}>Auto: Off</option>
                 <option value={15000}>Auto: 15s</option>
@@ -251,7 +225,7 @@ const Dashboard = () => {
           </div>
         </motion.div>
 
-        {/* 4 KPI Stat Cards */}
+        {/* ROW 1: 4 TOP KPI STAT CARDS */}
         {loading ? (
           <CardSkeleton count={4} />
         ) : (
@@ -280,13 +254,13 @@ const Dashboard = () => {
                 value={summary?.totalEmailsSent !== undefined && summary?.totalEmailsSent !== null ? summary.totalEmailsSent : '-'}
                 icon={CheckCircle2}
                 color="success"
-                description="Total emails delivered"
+                description="Successfully dispatched"
               />
             </div>
             <div className="col-12 col-sm-6 col-xl-3">
               <StatCard
                 title="Success Rate"
-                value={totalProcessed > 0 && summary?.successRate !== null && summary?.successRate !== undefined ? `${summary.successRate}%` : '-'}
+                value={totalProcessed > 0 && summary?.successRate !== null && summary?.successRate !== undefined ? `${summary.successRate}%` : '100%'}
                 icon={TrendingUp}
                 color="warning"
                 description="Delivery success rate"
@@ -295,11 +269,245 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* Quick Actions Bar */}
-        <div className="card border-0 shadow-sm rounded-4 bg-surface p-4 mb-4">
+        {/* ROW 2: CAMPAIGN PERFORMANCE (~42%) + DELIVERY OVERVIEW (~58%) */}
+        <div className="row g-4 mb-4">
+          {/* 1. Campaign Performance Donut Card */}
+          <div className="col-12 col-lg-5 col-xl-5">
+            <div className="card border shadow-sm rounded-4 bg-surface h-100 p-4" style={{ borderRadius: '16px', borderColor: 'var(--border, #E2E8F0)' }}>
+              <div className="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+                <div>
+                  <h6 className="fw-bold text-dark m-0">Campaign Performance</h6>
+                  <p className="text-muted small m-0 mt-0.5">Monitor campaign delivery activity and outcomes</p>
+                </div>
+                
+                <select
+                  className="form-select form-select-sm form-select-custom w-auto fs-8 rounded-3"
+                  value={timeFilter}
+                  onChange={(e) => setTimeFilter(e.target.value)}
+                  aria-label="Filter campaign performance date range"
+                  style={{ height: '34px', borderRadius: '8px' }}
+                >
+                  <option value="This Month">This Month</option>
+                  <option value="All Time">All Time</option>
+                  <option value="Last 30 Days">Last 30 Days</option>
+                </select>
+              </div>
+
+              {loading ? (
+                <div className="py-5 text-center text-muted">
+                  <div className="spinner-border spinner-border-sm text-primary me-2" role="status" />
+                  Loading campaign performance...
+                </div>
+              ) : totalProcessed > 0 ? (
+                <div className="d-flex flex-column justify-content-between h-100">
+                  {/* Donut Chart with Centered Total Emails Label */}
+                  <div className="position-relative d-flex align-items-center justify-content-center my-auto" style={{ width: '100%', height: 200 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie 
+                          data={pieData} 
+                          innerRadius={62} 
+                          outerRadius={82} 
+                          paddingAngle={totalProcessed > 0 ? 4 : 0} 
+                          dataKey="value"
+                          stroke="none"
+                        >
+                          <Cell fill="#10B981" />
+                          <Cell fill="#EF4444" />
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{ 
+                            borderRadius: '10px', 
+                            border: '1px solid #E2E8F0', 
+                            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)' 
+                          }} 
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    
+                    {/* Centered Donut Number */}
+                    <div className="position-absolute top-50 start-50 translate-middle text-center pointer-events-none">
+                      <div className="fw-bold fs-3 text-dark leading-none" style={{ lineHeight: 1 }}>
+                        {totalProcessed}
+                      </div>
+                      <div className="text-muted fs-9 text-uppercase tracking-wider fw-semibold mt-1" style={{ fontSize: '0.625rem', letterSpacing: '0.05em' }}>
+                        Total Emails
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Compact Metrics Below Chart */}
+                  <div className="row g-2 pt-3 border-top mt-2">
+                    <div className="col-6">
+                      <div className="p-2.5 rounded-3 border bg-body-tertiary d-flex align-items-center justify-content-between">
+                        <div className="d-flex align-items-center gap-2">
+                          <span className="rounded-circle bg-success flex-shrink-0" style={{ width: 10, height: 10 }} />
+                          <div>
+                            <div className="fw-bold text-dark fs-7 mb-0">{summary?.totalEmailsSent || 0}</div>
+                            <div className="text-muted fs-8">Sent ({sentPercentage}%)</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="col-6">
+                      <div className="p-2.5 rounded-3 border bg-body-tertiary d-flex align-items-center justify-content-between">
+                        <div className="d-flex align-items-center gap-2">
+                          <span className="rounded-circle bg-danger flex-shrink-0" style={{ width: 10, height: 10 }} />
+                          <div>
+                            <div className="fw-bold text-dark fs-7 mb-0">{summary?.totalFailedEmails || 0}</div>
+                            <div className="text-muted fs-8">Failed ({failedPercentage}%)</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-4 my-auto">
+                  <EmptyState
+                    title="No campaign data available"
+                    description="Create a campaign to start tracking delivery performance here."
+                    actionText={user?.role !== 'Viewer' ? "Create Campaign" : null}
+                    onAction={() => navigate('/composer')}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 2. Delivery Overview Analytics Card */}
+          <div className="col-12 col-lg-7 col-xl-7">
+            <div className="card border shadow-sm rounded-4 bg-surface h-100 p-4" style={{ borderRadius: '16px', borderColor: 'var(--border, #E2E8F0)' }}>
+              <div className="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+                <div>
+                  <h6 className="fw-bold text-dark m-0">Delivery Overview</h6>
+                  <p className="text-muted small m-0 mt-0.5">Key email outreach and delivery statistics</p>
+                </div>
+                <span className="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2.5 py-1 small fw-semibold">
+                  Outreach Summary
+                </span>
+              </div>
+
+              {loading ? (
+                <div className="py-5 text-center text-muted">
+                  <div className="spinner-border spinner-border-sm text-primary me-2" role="status" />
+                  Loading delivery statistics...
+                </div>
+              ) : (
+                <div className="d-flex flex-column justify-content-between h-100">
+                  {/* 6 Metric Mini-Grid */}
+                  <div className="row g-3 mb-4">
+                    <div className="col-6 col-sm-4">
+                      <div className="p-3 rounded-3 bg-body-tertiary border text-start h-100">
+                        <div className="d-flex align-items-center gap-1.5 text-muted fs-8 text-uppercase tracking-wider fw-bold mb-1" style={{ fontSize: '0.675rem' }}>
+                          <Send size={13} className="text-primary" /> Total Campaigns
+                        </div>
+                        <div className="fw-bold text-dark fs-4 m-0">{summary?.totalCampaigns ?? 0}</div>
+                        <div className="text-muted fs-8 mt-0.5">Campaigns launched</div>
+                      </div>
+                    </div>
+
+                    <div className="col-6 col-sm-4">
+                      <div className="p-3 rounded-3 bg-body-tertiary border text-start h-100">
+                        <div className="d-flex align-items-center gap-1.5 text-muted fs-8 text-uppercase tracking-wider fw-bold mb-1" style={{ fontSize: '0.675rem' }}>
+                          <Mail size={13} className="text-info" /> Emails Sent
+                        </div>
+                        <div className="fw-bold text-dark fs-4 m-0">{summary?.totalEmailsSent ?? 0}</div>
+                        <div className="text-muted fs-8 mt-0.5">Total dispatched</div>
+                      </div>
+                    </div>
+
+                    <div className="col-6 col-sm-4">
+                      <div className="p-3 rounded-3 bg-body-tertiary border text-start h-100">
+                        <div className="d-flex align-items-center gap-1.5 text-muted fs-8 text-uppercase tracking-wider fw-bold mb-1" style={{ fontSize: '0.675rem' }}>
+                          <CheckCircle2 size={13} className="text-success" /> Successful
+                        </div>
+                        <div className="fw-bold text-success fs-4 m-0">{summary?.totalEmailsSent ?? 0}</div>
+                        <div className="text-muted fs-8 mt-0.5">Delivered</div>
+                      </div>
+                    </div>
+
+                    <div className="col-6 col-sm-4">
+                      <div className="p-3 rounded-3 bg-body-tertiary border text-start h-100">
+                        <div className="d-flex align-items-center gap-1.5 text-muted fs-8 text-uppercase tracking-wider fw-bold mb-1" style={{ fontSize: '0.675rem' }}>
+                          <AlertCircle size={13} className="text-danger" /> Failed
+                        </div>
+                        <div className="fw-bold text-danger fs-4 m-0">{summary?.totalFailedEmails ?? 0}</div>
+                        <div className="text-muted fs-8 mt-0.5">Bounced / error</div>
+                      </div>
+                    </div>
+
+                    <div className="col-6 col-sm-4">
+                      <div className="p-3 rounded-3 bg-body-tertiary border text-start h-100">
+                        <div className="d-flex align-items-center gap-1.5 text-muted fs-8 text-uppercase tracking-wider fw-bold mb-1" style={{ fontSize: '0.675rem' }}>
+                          <Clock size={13} className="text-warning" /> Pending
+                        </div>
+                        <div className="fw-bold text-dark fs-4 m-0">0</div>
+                        <div className="text-muted fs-8 mt-0.5">In dispatch queue</div>
+                      </div>
+                    </div>
+
+                    <div className="col-6 col-sm-4">
+                      <div className="p-3 rounded-3 bg-body-tertiary border text-start h-100">
+                        <div className="d-flex align-items-center gap-1.5 text-muted fs-8 text-uppercase tracking-wider fw-bold mb-1" style={{ fontSize: '0.675rem' }}>
+                          <TrendingUp size={13} className="text-primary" /> Success Rate
+                        </div>
+                        <div className="fw-bold text-primary fs-4 m-0">
+                          {totalProcessed > 0 && summary?.successRate !== null && summary?.successRate !== undefined ? `${summary.successRate}%` : '100%'}
+                        </div>
+                        <div className="text-muted fs-8 mt-0.5">Delivery ratio</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Delivery Ratio Visual Progress Bar */}
+                  <div className="p-3 rounded-3 border bg-body-tertiary">
+                    <div className="d-flex align-items-center justify-content-between text-muted fs-8 mb-2">
+                      <span className="fw-semibold text-dark">Overall Delivery Ratio</span>
+                      <span className="fw-bold text-primary">
+                        {totalProcessed > 0 && summary?.successRate !== null && summary?.successRate !== undefined ? `${summary.successRate}%` : '100%'}
+                      </span>
+                    </div>
+                    <div className="progress overflow-hidden" style={{ height: '8px', borderRadius: '4px', backgroundColor: '#E2E8F0' }}>
+                      <div 
+                        className="progress-bar bg-success" 
+                        role="progressbar" 
+                        style={{ width: `${sentPercentage}%` }} 
+                        aria-valuenow={sentPercentage} 
+                        aria-valuemin="0" 
+                        aria-valuemax="100"
+                      />
+                      <div 
+                        className="progress-bar bg-danger" 
+                        role="progressbar" 
+                        style={{ width: `${failedPercentage}%` }} 
+                        aria-valuenow={failedPercentage} 
+                        aria-valuemin="0" 
+                        aria-valuemax="100"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ROW 3: INSTITUTION INSIGHTS / STUDENT DISTRIBUTION (Full Width) */}
+        <InstitutionInsights 
+          collegeDistribution={collegeDistribution} 
+          summary={summary} 
+          loading={loading} 
+          onExport={handleExportDistribution} 
+        />
+
+        {/* ROW 4: QUICK ACTIONS + RECENT CAMPAIGNS TABLE */}
+        <div className="card border shadow-sm rounded-4 bg-surface p-4 mb-4" style={{ borderRadius: '16px', borderColor: 'var(--border, #E2E8F0)' }}>
           <div className="d-flex align-items-center justify-content-between mb-3">
-            <h6 className="fw-bold text-dark m-0">Quick Actions</h6>
-            <span className="text-muted fs-8">Direct workspace navigation</span>
+            <div>
+              <h6 className="fw-bold text-dark m-0">Quick Actions</h6>
+              <p className="text-muted fs-8 m-0 mt-0.5">Direct recruitment workspace navigation</p>
+            </div>
           </div>
 
           <div className="row g-3">
@@ -309,6 +517,7 @@ const Dashboard = () => {
                   <button 
                     onClick={() => navigate('/students')}
                     className="btn btn-outline-custom w-100 p-3 text-start d-flex align-items-center gap-3 transition-all rounded-3"
+                    aria-label="Add Student"
                   >
                     <div className="p-2 rounded-3 bg-primary-subtle text-primary">
                       <UserPlus size={18} />
@@ -323,6 +532,7 @@ const Dashboard = () => {
                   <button 
                     onClick={() => navigate('/bulk-upload')}
                     className="btn btn-outline-custom w-100 p-3 text-start d-flex align-items-center gap-3 transition-all rounded-3"
+                    aria-label="Bulk Import CSV"
                   >
                     <div className="p-2 rounded-3 bg-info-subtle text-info">
                       <Upload size={18} />
@@ -337,6 +547,7 @@ const Dashboard = () => {
                   <button 
                     onClick={() => navigate('/composer')}
                     className="btn btn-outline-custom w-100 p-3 text-start d-flex align-items-center gap-3 transition-all rounded-3"
+                    aria-label="Create Campaign"
                   >
                     <div className="p-2 rounded-3 bg-success-subtle text-success">
                       <Send size={18} />
@@ -353,6 +564,7 @@ const Dashboard = () => {
               <button 
                 onClick={() => navigate('/reports')}
                 className="btn btn-outline-custom w-100 p-3 text-start d-flex align-items-center gap-3 transition-all rounded-3"
+                aria-label="View Detailed Reports"
               >
                 <div className="p-2 rounded-3 bg-warning-subtle text-warning">
                   <BarChart2 size={18} />
@@ -366,226 +578,18 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Analytics Charts Grid */}
-        <div className="row g-4 mb-4">
-          {/* Student Distribution - Enterprise SaaS Quality */}
-          <div className="col-12 col-lg-8">
-            <div className="card border-0 shadow-sm rounded-4 bg-surface h-100 p-4">
-              {/* Header */}
-              <div className="d-flex align-items-start justify-content-between mb-3 flex-wrap gap-2">
-                <div>
-                  <div className="text-uppercase text-primary fw-bold tracking-wider fs-8 mb-1" style={{ letterSpacing: '0.08em' }}>
-                    INSTITUTION INSIGHTS
-                  </div>
-                  <div className="d-flex align-items-center gap-2">
-                    <Building2 size={20} className="text-primary flex-shrink-0" />
-                    <h6 className="fw-bold text-dark m-0 fs-6">Student Distribution</h6>
-                  </div>
-                  <p className="text-muted small m-0 mt-0.5">Student volume across institutions</p>
-                </div>
-
-                <div className="d-flex align-items-center gap-2">
-                  <select
-                    className="form-select form-select-sm form-select-custom w-auto fs-8 rounded-3"
-                    value={timeFilter}
-                    onChange={(e) => setTimeFilter(e.target.value)}
-                    style={{ height: '36px', borderRadius: '10px' }}
-                  >
-                    <option value="All Time">All Time</option>
-                    <option value="This Month">This Month</option>
-                    <option value="Last 30 Days">Last 30 Days</option>
-                  </select>
-
-                  {collegeDistribution.length > 0 && (
-                    <Button 
-                      variant="outline-custom" 
-                      size="sm" 
-                      icon={Download} 
-                      onClick={handleExportDistribution}
-                      title="Export data to CSV"
-                      style={{ height: '36px', borderRadius: '10px' }}
-                    >
-                      <span className="d-none d-sm-inline">Export</span>
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {/* Compact Summary Metrics Bar */}
-              <div className="row g-2 mb-3">
-                <div className="col-4">
-                  <div className="p-2.5 rounded-3 bg-body-tertiary border text-start">
-                    <div className="text-muted fs-8 text-uppercase tracking-wider fw-bold" style={{ fontSize: '0.675rem' }}>Institutions</div>
-                    <div className="fw-bold text-dark fs-6 m-0">
-                      {loading ? '-' : collegeDistribution.length || '-'}
-                    </div>
-                  </div>
-                </div>
-                <div className="col-4">
-                  <div className="p-2.5 rounded-3 bg-body-tertiary border text-start">
-                    <div className="text-muted fs-8 text-uppercase tracking-wider fw-bold" style={{ fontSize: '0.675rem' }}>Candidates</div>
-                    <div className="fw-bold text-dark fs-6 m-0">
-                      {loading ? '-' : summary?.totalStudents !== undefined && summary?.totalStudents !== null ? summary.totalStudents : '-'}
-                    </div>
-                  </div>
-                </div>
-                <div className="col-4">
-                  <div className="p-2.5 rounded-3 bg-body-tertiary border text-start text-truncate">
-                    <div className="text-muted fs-8 text-uppercase tracking-wider fw-bold" style={{ fontSize: '0.675rem' }}>Top Institution</div>
-                    <div className="fw-bold text-primary fs-7 m-0 text-truncate" title={formattedDistribution[0]?.college}>
-                      {loading ? '-' : formattedDistribution[0]?.college || '-'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Chart Body */}
-              {loading ? (
-                <div className="py-5 text-center text-muted">
-                  <div className="spinner-border spinner-border-sm text-primary me-2" role="status" />
-                  Loading institution insights...
-                </div>
-              ) : formattedDistribution.length > 0 ? (
-                <div style={{ width: '100%' }}>
-                  <ResponsiveContainer width="100%" height={Math.max(240, Math.min(formattedDistribution.length * 44, 400))}>
-                    <BarChart 
-                      layout="vertical" 
-                      data={formattedDistribution} 
-                      margin={{ top: 5, right: 40, left: 5, bottom: 5 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(148, 163, 184, 0.15)" />
-                      <XAxis 
-                        type="number" 
-                        dataKey="count" 
-                        tick={{ fontSize: 11, fill: '#64748B' }} 
-                        allowDecimals={false}
-                        axisLine={{ stroke: 'rgba(148, 163, 184, 0.2)' }}
-                      />
-                      <YAxis 
-                        type="category" 
-                        dataKey="college" 
-                        width={window.innerWidth <= 768 ? 130 : 180} 
-                        tick={{ fontSize: 11, fill: '#64748B', fontWeight: 500 }} 
-                        tickFormatter={truncateCollegeName}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <Tooltip content={<CustomCollegeTooltip />} cursor={{ fill: 'rgba(79, 70, 229, 0.04)' }} />
-                      <Bar 
-                        dataKey="count" 
-                        fill="#4F46E5" 
-                        radius={[0, 6, 6, 0]} 
-                        barSize={20}
-                      >
-                        <LabelList 
-                          dataKey="count" 
-                          position="right" 
-                          fill="#4F46E5" 
-                          fontSize={12} 
-                          fontWeight={700} 
-                          offset={8} 
-                        />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-
-                  {/* Institutional Scope Footer Notice */}
-                  {collegeDistribution.length > 8 && (
-                    <div className="pt-3 mt-2 border-top d-flex align-items-center justify-content-between text-muted fs-8">
-                      <span>Showing top 8 of {collegeDistribution.length} institutions</span>
-                      <button 
-                        onClick={() => navigate('/students')} 
-                        className="btn btn-link p-0 text-primary fs-8 text-decoration-none fw-semibold d-inline-flex align-items-center gap-1"
-                      >
-                        View All in Directory <ExternalLink size={12} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="py-4">
-                  <EmptyState
-                    title="No institution data available"
-                    description="Import students to see institution-level distribution and recruitment coverage."
-                    actionText={user?.role !== 'Viewer' ? "Import Students" : null}
-                    onAction={() => navigate('/bulk-upload')}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Campaign Performance */}
-          <div className="col-12 col-lg-4">
-            <div className="card border-0 shadow-sm rounded-4 bg-surface h-100 p-4">
-              <div className="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
-                <div>
-                  <h6 className="fw-bold text-dark m-0">Campaign Performance</h6>
-                  <p className="text-muted small m-0 mt-0.5">Monitor email campaign activity and outcomes.</p>
-                </div>
-                
-                <div className="d-flex align-items-center gap-2">
-                  <select
-                    className="form-select form-select-sm form-select-custom w-auto fs-8"
-                    value={timeFilter}
-                    onChange={(e) => setTimeFilter(e.target.value)}
-                  >
-                    <option value="All Time">All Time</option>
-                    <option value="This Month">This Month</option>
-                    <option value="Last 30 Days">Last 30 Days</option>
-                  </select>
-                  <Zap size={18} className="text-success" />
-                </div>
-              </div>
-
-              {loading ? (
-                <div className="py-5 text-center text-muted">Loading performance data...</div>
-              ) : totalProcessed > 0 ? (
-                <>
-                  <div style={{ width: '100%', height: 210 }}>
-                    <ResponsiveContainer>
-                      <PieChart>
-                        <Pie data={pieData} innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                          <Cell fill="#10B981" />
-                          <Cell fill="#EF4444" />
-                        </Pie>
-                        <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="d-flex justify-content-center gap-4 mt-3 pt-2 border-top">
-                    <div className="d-flex align-items-center gap-2">
-                      <span className="rounded-circle" style={{ width: 10, height: 10, background: '#10B981' }}></span>
-                      <span className="small text-muted fw-medium">Sent ({summary?.totalEmailsSent || 0})</span>
-                    </div>
-                    <div className="d-flex align-items-center gap-2">
-                      <span className="rounded-circle" style={{ width: 10, height: 10, background: '#EF4444' }}></span>
-                      <span className="small text-muted fw-medium">Failed ({summary?.totalFailedEmails || 0})</span>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="py-4">
-                  <EmptyState
-                    title="No campaign data available"
-                    description="Create a campaign to see delivery performance here."
-                    actionText={user?.role !== 'Viewer' ? "Create Campaign" : null}
-                    onAction={() => navigate('/composer')}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Recent Campaigns Table */}
-        <div className="card border-0 shadow-sm rounded-4 bg-surface p-4">
-          <div className="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+        {/* Recent Campaigns Table (Full Width) */}
+        <div className="card border shadow-sm rounded-4 bg-surface p-4" style={{ borderRadius: '16px', borderColor: 'var(--border, #E2E8F0)' }}>
+          <div className="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
             <div>
               <h6 className="fw-bold text-dark m-0">Recent Campaigns</h6>
-              <p className="text-muted small m-0 mt-0.5">Live execution logs and campaign delivery status</p>
+              <p className="text-muted small m-0 mt-0.5">Live campaign execution and delivery status</p>
             </div>
-            <Link to="/campaigns" className="btn btn-sm btn-ghost-custom text-primary fw-semibold d-flex align-items-center gap-1">
+            <Link 
+              to="/campaigns" 
+              className="btn btn-sm btn-ghost-custom text-primary fw-semibold d-flex align-items-center gap-1"
+              aria-label="View complete campaign history"
+            >
               <span>View History</span>
               <ArrowRight size={16} />
             </Link>
@@ -607,13 +611,13 @@ const Dashboard = () => {
               </thead>
               <tbody>
                 {loading ? (
-                  <TableSkeleton rows={3} cols={8} />
+                  <TableSkeleton rows={4} cols={8} />
                 ) : recentCampaigns.length === 0 ? (
                   <tr>
                     <td colSpan="8">
                       <EmptyState
-                        title="No campaigns yet."
-                        description="Your campaign history will appear here after you send your first campaign."
+                        title="No campaign activity yet"
+                        description="Create your first campaign to start tracking delivery performance."
                         actionText={user?.role !== 'Viewer' ? "Create Campaign" : null}
                         onAction={() => navigate('/composer')}
                       />
@@ -626,8 +630,12 @@ const Dashboard = () => {
 
                     return (
                       <tr key={c._id}>
-                        <td>
-                          <Link to={`/campaigns/${c._id}`} className="fw-bold text-decoration-none text-dark">
+                        <td style={{ whiteSpace: 'normal', minWidth: '220px', maxWidth: '340px' }}>
+                          <Link 
+                            to={`/campaigns/${c._id}`} 
+                            className="fw-bold text-decoration-none text-dark d-block" 
+                            style={{ lineHeight: 1.35, wordBreak: 'break-word' }}
+                          >
                             {c.title}
                           </Link>
                         </td>

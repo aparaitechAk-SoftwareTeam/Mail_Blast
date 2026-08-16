@@ -1,17 +1,36 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { AuthContext } from '../../context/AuthContext';
-import { Bell, Search, Sun, Moon, CheckCircle2, Menu } from 'lucide-react';
+import { Bell, Search, Sun, Moon, CheckCircle2, Menu, X } from 'lucide-react';
 import StatusBadge from '../ui/StatusBadge';
 
 const Navbar = ({ title }) => {
   const { user } = useContext(AuthContext);
   const [theme, setTheme] = useState(() => localStorage.getItem('aparaitech_theme') || 'light');
   const [showNotifications, setShowNotifications] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
+  const searchInputRef = useRef(null);
+
+  // Platform detection for Cmd/Ctrl + K hint
+  const isMac = typeof window !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+  const shortcutHint = isMac ? '⌘ K' : 'Ctrl K';
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('aparaitech_theme', theme);
   }, [theme]);
+
+  // Global Ctrl/Cmd + K shortcut handler
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
@@ -46,15 +65,62 @@ const Navbar = ({ title }) => {
       </div>
 
       <div className="d-flex align-items-center gap-2 gap-sm-3 flex-shrink-0">
-        {/* Global Search Bar (Desktop) */}
-        <div className="position-relative d-none d-md-block" style={{ width: '220px' }}>
-          <Search size={16} className="position-absolute top-50 start-0 translate-middle-y ms-3 text-muted" />
-          <input
-            type="text"
-            placeholder="Search students, campaigns..."
-            className="form-control form-control-custom ps-5 py-1.5 fs-7"
-            style={{ borderRadius: '20px', fontSize: '0.825rem' }}
+        {/* Global Enterprise Search Bar */}
+        <div 
+          className="position-relative d-none d-md-block"
+          style={{ width: '350px', maxWidth: '100%' }}
+        >
+          <Search 
+            size={17} 
+            className={`position-absolute top-50 start-0 translate-middle-y ms-3 transition-colors ${
+              isFocused ? 'text-primary' : 'text-muted'
+            }`} 
           />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            placeholder="Search students, campaigns..."
+            aria-label="Search students and campaigns"
+            className="form-control bg-white text-dark ps-5 pe-5 py-2 border shadow-none"
+            style={{ 
+              height: '42px', 
+              borderRadius: '10px', 
+              borderColor: isFocused ? 'var(--bs-primary, #3b82f6)' : '#DDE3EC',
+              boxShadow: isFocused ? '0 0 0 3px rgba(59, 130, 246, 0.15)' : 'none',
+              transition: 'all 180ms ease-in-out',
+              fontSize: '0.875rem'
+            }}
+          />
+
+          {/* Right Action: Clear Button or Keyboard Shortcut Hint */}
+          <div className="position-absolute top-50 end-0 translate-middle-y me-2.5 d-flex align-items-center">
+            {searchQuery ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  searchInputRef.current?.focus();
+                }}
+                className="btn btn-sm btn-link text-muted p-1 border-0 d-flex align-items-center justify-content-center text-decoration-none rounded-circle hover-bg-light"
+                aria-label="Clear search text"
+                title="Clear search"
+                style={{ width: '24px', height: '24px' }}
+              >
+                <X size={14} />
+              </button>
+            ) : (
+              <kbd 
+                className="badge bg-light text-secondary border px-1.5 py-1 rounded fs-9 fw-medium text-uppercase pointer-events-none"
+                style={{ fontSize: '0.7rem', letterSpacing: '0.03em', borderColor: '#E2E8F0' }}
+              >
+                {shortcutHint}
+              </kbd>
+            )}
+          </div>
         </div>
 
         {/* Theme Toggle */}
@@ -110,17 +176,24 @@ const Navbar = ({ title }) => {
         {/* User Profile Info */}
         <div className="border-start ps-2 ps-sm-3">
           <div className="d-flex align-items-center gap-2">
-            <div
-              className="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center shadow-sm flex-shrink-0"
-              style={{ width: '36px', height: '36px', fontWeight: 'bold', fontSize: '0.85rem' }}
-            >
-              {user?.name?.charAt(0)?.toUpperCase() || 'A'}
+            <div className="position-relative flex-shrink-0">
+              <div
+                className="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center shadow-sm"
+                style={{ width: '38px', height: '38px', fontWeight: 'bold', fontSize: '0.875rem' }}
+              >
+                {user?.name?.charAt(0)?.toUpperCase() || 'A'}
+              </div>
+              <span 
+                className="position-absolute bottom-0 end-0 p-1 bg-success border border-white rounded-circle"
+                title="Active / Online"
+                aria-label="Active / Online"
+              />
             </div>
             <div className="d-none d-sm-block text-start">
               <div className="fw-semibold text-dark leading-tight" style={{ fontSize: '0.85rem' }}>
-                {user?.name || 'Recruiter'}
+                {user?.name || 'Admin User'}
               </div>
-              <StatusBadge status={user?.role || 'Recruiter'} type="role" />
+              <StatusBadge status={user?.role || 'Admin'} type="role" />
             </div>
           </div>
         </div>

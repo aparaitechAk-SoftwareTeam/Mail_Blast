@@ -15,6 +15,13 @@ const campaignSchema = new mongoose.Schema({
     placementStatus: { type: String, default: '' },
     customStudentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Student' }]
   },
+  audienceMode: {
+    type: String,
+    enum: ['all', 'filtered', 'new_since_last_campaign'],
+    default: 'filtered'
+  },
+  baselineCampaignId: { type: mongoose.Schema.Types.ObjectId, ref: 'Campaign', default: null },
+  baselineTimestamp: { type: Date, default: null },
   status: {
     type: String,
     enum: ['Draft', 'Scheduled', 'Sending', 'Completed', 'Failed', 'Cancelled'],

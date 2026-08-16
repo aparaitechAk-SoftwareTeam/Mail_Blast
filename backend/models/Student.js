@@ -16,10 +16,12 @@ const studentSchema = new mongoose.Schema({
   skills: [{ type: String, trim: true }],
   location: { type: String, default: '' },
   isSubscribed: { type: Boolean, default: true },
-  tags: [{ type: String, trim: true }]
+  tags: [{ type: String, trim: true }],
+  createdAt: { type: Date, default: Date.now, index: true }
 }, { timestamps: true });
 
 studentSchema.index({ college: 1, branch: 1, graduationYear: 1 });
 studentSchema.index({ cgpa: 1 });
+studentSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('Student', studentSchema);

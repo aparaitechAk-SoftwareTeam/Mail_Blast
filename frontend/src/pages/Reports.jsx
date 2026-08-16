@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Navbar from '../components/common/Navbar';
-import { fetchDetailedReports } from '../services/reportService';
+import { fetchDetailedReports, fetchDashboardStats } from '../services/reportService';
 import { exportToCSV } from '../utils/exportUtils';
 import { useToast } from '../context/ToastContext';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
@@ -11,14 +11,75 @@ import Button from '../components/ui/Button';
 import StatCard from '../components/ui/StatCard';
 import { TableSkeleton, CardSkeleton } from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
+import InstitutionInsights from '../components/analytics/InstitutionInsights';
 
 import { useContext } from 'react';
 import { RefreshContext } from '../context/RefreshContext';
+
+// Custom XAxis Tick for multi-line word wrapping without truncation
+const CustomXAxisTick = (props) => {
+  const { x, y, payload } = props;
+  const rawText = payload.value || '';
+  
+  // Wrap words into lines of ~12-14 chars each
+  const maxCharsPerLine = 14;
+  const words = rawText.split(' ');
+  const lines = [];
+  let currentLine = '';
+
+  words.forEach((word) => {
+    if ((currentLine + ' ' + word).trim().length <= maxCharsPerLine) {
+      currentLine = (currentLine + ' ' + word).trim();
+    } else {
+      if (currentLine) lines.push(currentLine);
+      currentLine = word;
+    }
+  });
+  if (currentLine) lines.push(currentLine);
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text
+        x={0}
+        y={0}
+        dy={10}
+        textAnchor="middle"
+        fill="#64748B"
+        style={{ fontSize: 11, fontWeight: 500, fontFamily: 'inherit' }}
+      >
+        {lines.map((line, index) => (
+          <tspan key={index} x={0} dy={index === 0 ? 0 : 14}>
+            {line}
+          </tspan>
+        ))}
+      </text>
+    </g>
+  );
+};
+
+// Custom Tooltip displaying full campaign title and exact counts
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white p-3 rounded-3 shadow-lg border text-dark" style={{ minWidth: '220px', maxWidth: '320px' }}>
+        <p className="fw-bold fs-9 mb-2 border-bottom pb-1.5 text-wrap text-dark">{label}</p>
+        {payload.map((entry, index) => (
+          <div key={index} className="d-flex align-items-center justify-content-between gap-3 fs-9 mb-1">
+            <span style={{ color: entry.color, fontWeight: 600 }}>{entry.name}:</span>
+            <span className="fw-bold text-dark">{entry.value}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
 
 const Reports = () => {
   const toast = useToast();
   const { refreshKey } = useContext(RefreshContext);
   const [data, setData] = useState(null);
+  const [dashboardStats, setDashboardStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState('30d');
 
@@ -26,8 +87,12 @@ const Reports = () => {
     document.title = 'Aparaitech | Analytics Reports';
     const load = async () => {
       try {
-        const res = await fetchDetailedReports();
-        setData(res);
+        const [reportsRes, dashRes] = await Promise.all([
+          fetchDetailedReports(),
+          fetchDashboardStats()
+        ]);
+        setData(reportsRes);
+        setDashboardStats(dashRes);
       } catch (err) {
         console.error('Error fetching reports:', err);
         toast.error('Failed to fetch analytics reports');
@@ -50,6 +115,16 @@ const Reports = () => {
     }));
     exportToCSV(exportData, `recruitment_analytics_${Date.now()}.csv`);
     toast.info('Downloading executive analytics CSV...');
+  };
+
+  const handleExportInstitutionCSV = () => {
+    if (!dashboardStats?.collegeDistribution || dashboardStats.collegeDistribution.length === 0) return;
+    const exportData = dashboardStats.collegeDistribution.map(item => ({
+      'Institution Name': item.college,
+      'Student Candidates': item.count
+    }));
+    exportToCSV(exportData, `Student_Distribution_Aparaitech_${Date.now()}`);
+    toast.info('Downloading student distribution CSV...');
   };
 
   const totalSent = data?.campaigns?.reduce((acc, c) => acc + (c.sentCount || 0), 0) || 0;
@@ -107,24 +182,44 @@ const Reports = () => {
           </div>
         )}
 
+        {/* Institution Insights Section */}
+        <InstitutionInsights
+          collegeDistribution={dashboardStats?.collegeDistribution}
+          summary={dashboardStats?.summary}
+          loading={loading}
+          onExport={handleExportInstitutionCSV}
+        />
+
         {/* Recharts Analytics Volume */}
         <div className="card border-0 shadow-sm rounded-4 bg-surface p-4 mb-4">
-          <h6 className="fw-bold text-dark mb-4">Email Dispatch Volume per Campaign</h6>
+          <div className="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+            <div>
+              <h6 className="fw-bold text-dark m-0">Email Dispatch Volume per Campaign</h6>
+              <p className="text-muted fs-9 m-0 mt-0.5">Historical delivery comparison across recent campaign blasts</p>
+            </div>
+          </div>
           {loading ? (
             <div className="py-5 text-center text-muted">Loading chart data...</div>
           ) : (
-            <div style={{ width: '100%', height: 320 }}>
-              <ResponsiveContainer>
-                <BarChart data={data?.timelineData || []}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748B' }} />
-                  <YAxis tick={{ fontSize: 11, fill: '#64748B' }} />
-                  <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                  <Legend />
-                  <Bar dataKey="sent" name="Sent Successfully" fill="#10B981" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="failed" name="Failed / Bounced" fill="#EF4444" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <div style={{ width: '100%', overflowX: 'auto' }}>
+              <div style={{ minWidth: Math.max((data?.timelineData?.length || 0) * 110, 500), height: 380 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={data?.timelineData || []} margin={{ top: 10, right: 20, left: 0, bottom: 45 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                    <XAxis 
+                      dataKey="name" 
+                      interval={0} 
+                      height={65} 
+                      tick={<CustomXAxisTick />} 
+                    />
+                    <YAxis tick={{ fontSize: 11, fill: '#64748B' }} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend wrapperStyle={{ paddingTop: '15px' }} />
+                    <Bar dataKey="sent" name="Sent Successfully" fill="#10B981" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="failed" name="Failed / Bounced" fill="#EF4444" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           )}
         </div>

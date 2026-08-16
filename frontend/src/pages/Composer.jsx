@@ -31,7 +31,10 @@ const Composer = () => {
   const [scheduledAt, setScheduledAt] = useState('');
   const [errors, setErrors] = useState({});
 
-  // Target Filter State
+  // Target Filter & Audience Mode State
+  const [audienceMode, setAudienceMode] = useState('filtered'); // 'all' | 'filtered' | 'new_since_last_campaign'
+  const [lastCampaignMeta, setLastCampaignMeta] = useState(null);
+  const [hasPreviousCampaign, setHasPreviousCampaign] = useState(true);
   const [filters, setFilters] = useState({
     college: '',
     branch: '',
@@ -63,43 +66,13 @@ const Composer = () => {
     document.title = 'Aparaitech | Email Composer';
     loadTemplates();
 
-    // Check for saved local draft
-    const savedDraft = localStorage.getItem(DRAFT_KEY);
-    if (savedDraft) {
-      try {
-        const parsed = JSON.parse(savedDraft);
-        if (parsed.title) setTitle(parsed.title);
-        if (parsed.subject) setSubject(parsed.subject);
-        if (parsed.bodyHtml) setBodyHtml(parsed.bodyHtml);
-      } catch (e) {
-        console.error('Failed to parse saved draft:', e);
-      }
-    }
+    // Ensure any legacy composer draft is purged on mount so composer starts completely fresh
+    localStorage.removeItem(DRAFT_KEY);
   }, []);
-
-  // Auto-Save Draft on Form Change
-  useEffect(() => {
-    if (title || subject || bodyHtml) {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, subject, bodyHtml }));
-    }
-  }, [title, subject, bodyHtml]);
-
-  // Unsaved Changes BeforeUnload Listener
-  useEffect(() => {
-    const handleBeforeUnload = (e) => {
-      if (title || subject || bodyHtml) {
-        e.preventDefault();
-        e.returnValue = 'You have unsaved campaign changes. Are you sure you want to leave?';
-        return e.returnValue;
-      }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [title, subject, bodyHtml]);
 
   useEffect(() => {
     updateRecipientCounter();
-  }, [filters]);
+  }, [filters, audienceMode]);
 
   const loadTemplates = async () => {
     try {
@@ -114,9 +87,16 @@ const Composer = () => {
     try {
       const res = await fetchStudents({
         ...filters,
-        limit: 1000
+        audienceMode,
+        limit: 1
       });
       setRecipientCount(res.total || 0);
+      if (res.meta?.lastCampaign !== undefined) {
+        setLastCampaignMeta(res.meta.lastCampaign);
+      }
+      if (res.meta?.hasPreviousCampaign !== undefined) {
+        setHasPreviousCampaign(res.meta.hasPreviousCampaign);
+      }
     } catch (err) {
       console.error('Error updating counter:', err);
     }
@@ -184,6 +164,7 @@ const Composer = () => {
   };
 
   const handleClearFilters = () => {
+    setAudienceMode('filtered');
     setFilters({
       college: '',
       branch: '',
@@ -200,6 +181,7 @@ const Composer = () => {
     try {
       const res = await fetchStudents({
         ...filters,
+        audienceMode,
         limit: 100
       });
       setMatchingStudentsList(res.students || []);
@@ -229,6 +211,7 @@ const Composer = () => {
         bodyHtml,
         templateId: selectedTemplateId || null,
         targetFilters: filters,
+        audienceMode,
         scheduledAt: scheduledAt || null
       });
 
@@ -268,74 +251,91 @@ const Composer = () => {
             {/* Left Column: Email Details & Content */}
             <div className="col-12 col-lg-8">
               <div className="card border-0 shadow-sm rounded-4 bg-surface p-4 mb-4">
-                <div className="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
-                  <div>
-                    <h5 className="fw-bold text-dark m-0">Campaign Details & Body</h5>
-                    <p className="text-muted small m-0 mt-0.5">Compose personalized recruitment emails or load prebuilt templates</p>
+                <div className="d-flex align-items-center justify-content-between mb-4 pb-3 border-bottom flex-wrap gap-3">
+                  <div className="d-flex align-items-center gap-2.5">
+                    <div className="p-2.5 rounded-3 bg-primary-subtle text-primary">
+                      <Mail size={20} />
+                    </div>
+                    <div>
+                      <h5 className="fw-bold text-dark m-0">Campaign Details & Body</h5>
+                      <p className="text-muted small m-0 mt-0.5">Compose personalized recruitment emails or load prebuilt templates</p>
+                    </div>
                   </div>
 
                   {templates.length > 0 && (
-                    <Select
-                      name="template"
-                      value={selectedTemplateId}
-                      onChange={(e) => handleSelectTemplate(e.target.value)}
-                      options={templates.map(t => ({ label: t.name, value: t._id }))}
-                      placeholder="Load Prebuilt Template..."
-                      className="m-0 w-auto"
-                    />
+                    <div className="d-flex align-items-center gap-2">
+                      <Select
+                        name="template"
+                        value={selectedTemplateId}
+                        onChange={(e) => handleSelectTemplate(e.target.value)}
+                        options={templates.map(t => ({ label: t.name, value: t._id }))}
+                        placeholder="Load Prebuilt Template..."
+                        className="m-0 w-auto fs-9"
+                      />
+                    </div>
                   )}
                 </div>
 
-                <Input
-                  label="Internal Campaign Name"
-                  name="title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  error={errors.title}
-                  required
-                  placeholder="e.g. COEP Campus Placement Drive 2026 Invitation"
-                />
+                <div className="mb-4">
+                  <Input
+                    label="Internal Campaign Name"
+                    name="title"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    error={errors.title}
+                    required
+                    placeholder="e.g. COEP Campus Placement Drive 2026 Invitation"
+                  />
 
-                <Input
-                  label="Email Subject Line"
-                  name="subject"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  error={errors.subject}
-                  required
-                  placeholder="e.g. Invitation for Campus Placement Drive - {Name}"
-                />
+                  <Input
+                    label="Email Subject Line"
+                    name="subject"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    error={errors.subject}
+                    required
+                    placeholder="e.g. Invitation for Campus Placement Drive - {Name}"
+                  />
+                </div>
 
-                {/* Tag Toolbar */}
-                <div className="mb-3">
-                  <label className="form-label small fw-semibold text-secondary d-flex align-items-center gap-1">
-                    <Sparkles size={14} className="text-primary" />
-                    <span>Insert Personalization Tags (Click to add):</span>
-                  </label>
+                {/* Personalization Tag Toolbar */}
+                <div className="p-3 bg-light rounded-3 mb-4 border border-light-subtle">
+                  <div className="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-1">
+                    <label className="form-label small fw-semibold text-dark m-0 d-flex align-items-center gap-1.5">
+                      <Sparkles size={15} className="text-primary" />
+                      <span>Insert Personalization Tags</span>
+                    </label>
+                    <span className="text-muted fs-9">Click chip to inject into body</span>
+                  </div>
                   <div className="d-flex flex-wrap gap-2">
                     {PERSONALIZATION_TAGS.map((t) => (
-                      <span
+                      <button
+                        type="button"
                         key={t.tag}
                         onClick={() => insertTag(t.tag)}
-                        className="tag-chip"
+                        className="btn btn-sm btn-white border shadow-2xs text-primary font-monospace fw-semibold fs-9 rounded-pill px-2.5 py-1 transition-all"
+                        title={`Click to insert ${t.tag}`}
                       >
                         {t.tag}
-                      </span>
+                      </button>
                     ))}
                   </div>
                 </div>
 
-                <Textarea
-                  label="HTML Body Content"
-                  name="bodyHtml"
-                  value={bodyHtml}
-                  onChange={(e) => setBodyHtml(e.target.value)}
-                  error={errors.bodyHtml}
-                  rows={14}
-                  required
-                  placeholder="Type email body content or insert HTML..."
-                  className="font-monospace"
-                />
+                <div className="mb-2">
+                  <Textarea
+                    label="HTML Body Content"
+                    name="bodyHtml"
+                    value={bodyHtml}
+                    onChange={(e) => setBodyHtml(e.target.value)}
+                    error={errors.bodyHtml}
+                    rows={15}
+                    required
+                    placeholder="Type email body content or insert HTML..."
+                    className="font-monospace fs-9"
+                    style={{ minHeight: '320px' }}
+                  />
+                </div>
               </div>
             </div>
 
@@ -344,17 +344,23 @@ const Composer = () => {
               {/* Audience Counter */}
               <div className="card border-0 shadow-sm rounded-4 bg-primary text-white p-4 mb-4">
                 <div className="d-flex align-items-center justify-content-between mb-2">
-                  <span className="small text-white-50 fw-semibold text-uppercase tracking-wider">Targeted Candidate Pool</span>
-                  <Users size={20} />
+                  <span className="small text-white-50 fw-semibold text-uppercase tracking-wider fs-9">Targeted Candidate Pool</span>
+                  <Users size={20} className="text-white-50" />
                 </div>
-                <h1 className="fw-bold m-0 tracking-tight">{recipientCount}</h1>
-                <div className="d-flex align-items-center justify-content-between mt-2 pt-2 border-top border-white border-opacity-20">
-                  <span className="small text-white-50">Candidates matching filters</span>
+                <h1 className="fw-bold display-5 m-0 tracking-tight">{recipientCount}</h1>
+                <div className="d-flex align-items-center justify-content-between mt-3 pt-2.5 border-top border-white border-opacity-20 flex-wrap gap-2">
+                  <span className="small text-white-50 fs-9">
+                    {audienceMode === 'all' 
+                      ? 'All subscribed candidates' 
+                      : audienceMode === 'new_since_last_campaign' 
+                        ? 'New candidates added since last campaign' 
+                        : 'Candidates matching active filters'}
+                  </span>
                   {recipientCount > 0 && (
                     <button
                       type="button"
                       onClick={handleOpenViewRecipients}
-                      className="btn btn-sm btn-light text-primary fw-bold py-1 px-2.5 rounded-pill fs-8 d-inline-flex align-items-center gap-1"
+                      className="btn btn-sm btn-light text-primary fw-bold py-1 px-3 rounded-pill fs-9 d-inline-flex align-items-center gap-1.5 shadow-sm"
                     >
                       <List size={13} /> View Recipients
                     </button>
@@ -362,76 +368,237 @@ const Composer = () => {
                 </div>
               </div>
 
-              {/* Filters Form */}
-              <div className="card border-0 shadow-sm rounded-4 bg-surface p-4 mb-4">
-                <div className="d-flex align-items-center justify-content-between mb-3">
-                  <h6 className="fw-bold text-dark m-0">Audience Filters</h6>
+              {/* Audience Selection & Filters Form */}
+              <div className="card border-0 shadow-sm rounded-4 bg-surface p-4 mb-4" style={{ borderColor: '#e8edf3' }}>
+                {/* Header */}
+                <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                  <div className="d-flex align-items-center gap-2">
+                    <div className="p-1.5 rounded-2 bg-primary-subtle text-primary">
+                      <Filter size={18} />
+                    </div>
+                    <h6 className="fw-bold text-dark m-0 fs-6">Audience & Filters</h6>
+                  </div>
                   <button
                     type="button"
                     onClick={handleClearFilters}
-                    className="btn btn-link p-0 text-muted fs-8 text-decoration-none d-inline-flex align-items-center gap-1"
+                    className="btn btn-link p-0 text-muted fs-9 text-decoration-none d-inline-flex align-items-center gap-1 hover-primary"
                   >
-                    <RotateCcw size={12} /> Clear Filters
+                    <RotateCcw size={12} /> Clear all
                   </button>
                 </div>
 
-                <Input
-                  label="College / University"
-                  name="collegeFilter"
-                  value={filters.college}
-                  onChange={(e) => setFilters({ ...filters, college: e.target.value })}
-                  placeholder="All Colleges"
-                />
-
-                <Input
-                  label="Branch / Stream"
-                  name="branchFilter"
-                  value={filters.branch}
-                  onChange={(e) => setFilters({ ...filters, branch: e.target.value })}
-                  placeholder="All Branches"
-                />
-
-                <div className="row g-2">
-                  <div className="col-6">
-                    <Input
-                      label="Passout Year"
-                      name="gradYearFilter"
-                      type="number"
-                      value={filters.graduationYear}
-                      onChange={(e) => setFilters({ ...filters, graduationYear: e.target.value })}
-                      placeholder="2026"
-                    />
+                {/* Audience Target Section Header */}
+                <div className="mb-3">
+                  <div className="mb-2">
+                    <h6 className="fw-semibold text-dark m-0 fs-9">Audience target</h6>
+                    <p className="text-muted fs-9 m-0 mt-0.5">Choose who should receive this campaign</p>
                   </div>
-                  <div className="col-6">
-                    <Input
-                      label="Min CGPA"
-                      name="cgpaFilter"
-                      type="number"
-                      step="0.1"
-                      value={filters.minCgpa}
-                      onChange={(e) => setFilters({ ...filters, minCgpa: e.target.value })}
-                      placeholder="0.0"
-                    />
+
+                  {/* Radio Selectable Options */}
+                  <div className="d-flex flex-column gap-2 mt-2">
+                    {/* Mode 1: All Subscribed Students */}
+                    <label 
+                      className={`d-flex align-items-start gap-2.5 p-3 rounded-3 border transition-all cursor-pointer ${
+                        audienceMode === 'all' 
+                          ? 'bg-primary-subtle border-primary text-primary fw-semibold' 
+                          : 'bg-white border-light-subtle text-dark hover-border-primary'
+                      }`}
+                      style={{ padding: '11px 14px', borderRadius: '10px' }}
+                    >
+                      <input
+                        type="radio"
+                        name="audienceMode"
+                        value="all"
+                        checked={audienceMode === 'all'}
+                        onChange={() => setAudienceMode('all')}
+                        className="form-check-input m-0 mt-0.5 flex-shrink-0"
+                      />
+                      <div className="flex-grow-1">
+                        <div className="fs-9 fw-semibold text-dark">All Subscribed Students</div>
+                        <div className="text-muted fs-9 fw-normal mt-0.5">Send to all eligible subscribers</div>
+                      </div>
+                    </label>
+
+                    {/* Mode 2: Filtered Students */}
+                    <label 
+                      className={`d-flex align-items-start gap-2.5 p-3 rounded-3 border transition-all cursor-pointer ${
+                        audienceMode === 'filtered' 
+                          ? 'bg-primary-subtle border-primary text-primary fw-semibold' 
+                          : 'bg-white border-light-subtle text-dark hover-border-primary'
+                      }`}
+                      style={{ padding: '11px 14px', borderRadius: '10px' }}
+                    >
+                      <input
+                        type="radio"
+                        name="audienceMode"
+                        value="filtered"
+                        checked={audienceMode === 'filtered'}
+                        onChange={() => setAudienceMode('filtered')}
+                        className="form-check-input m-0 mt-0.5 flex-shrink-0"
+                      />
+                      <div className="flex-grow-1">
+                        <div className="fs-9 fw-semibold text-dark">Filtered Students</div>
+                        <div className="text-muted fs-9 fw-normal mt-0.5">Use custom audience parameters</div>
+                      </div>
+                    </label>
+
+                    {/* Mode 3: New Students Since Last Campaign */}
+                    <label 
+                      className={`d-flex align-items-start gap-2.5 p-3 rounded-3 border transition-all ${
+                        !hasPreviousCampaign 
+                          ? 'opacity-50 cursor-not-allowed bg-light' 
+                          : audienceMode === 'new_since_last_campaign' 
+                            ? 'bg-primary-subtle border-primary text-primary fw-semibold cursor-pointer' 
+                            : 'bg-white border-light-subtle text-dark cursor-pointer hover-border-primary'
+                      }`}
+                      style={{ padding: '11px 14px', borderRadius: '10px' }}
+                    >
+                      <input
+                        type="radio"
+                        name="audienceMode"
+                        value="new_since_last_campaign"
+                        checked={audienceMode === 'new_since_last_campaign'}
+                        disabled={!hasPreviousCampaign}
+                        onChange={() => hasPreviousCampaign && setAudienceMode('new_since_last_campaign')}
+                        className="form-check-input m-0 mt-0.5 flex-shrink-0"
+                      />
+                      <div className="flex-grow-1">
+                        <div className="d-flex align-items-center justify-content-between flex-wrap gap-1">
+                          <span className="fs-9 fw-semibold text-dark">New Students Since Last Campaign</span>
+                          <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-0.5 rounded-pill fs-9 fw-bold">
+                            NEW
+                          </span>
+                        </div>
+                        <div className="text-muted fs-9 fw-normal mt-0.5">
+                          {!hasPreviousCampaign 
+                            ? 'Available after your first completed campaign.'
+                            : 'Added after the last completed campaign.'}
+                        </div>
+                        {hasPreviousCampaign && lastCampaignMeta && (
+                          <div className="mt-1.5 p-2 bg-white rounded-2 border border-primary-subtle text-primary fs-9 fw-normal">
+                            <strong>Baseline:</strong> {lastCampaignMeta.title} ({formatDate(lastCampaignMeta.completedAt)})
+                          </div>
+                        )}
+                      </div>
+                    </label>
                   </div>
                 </div>
 
-                <Input
-                  label="Schedule Launch (Optional)"
-                  name="scheduledAt"
-                  type="datetime-local"
-                  value={scheduledAt}
-                  onChange={(e) => setScheduledAt(e.target.value)}
-                />
+                {/* Active Audience Summary Row */}
+                <div className="p-2.5 bg-light rounded-3 border border-light-subtle mb-3 d-flex align-items-center justify-content-between">
+                  <span className="text-muted fs-9 fw-semibold">Target audience</span>
+                  <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1 rounded-pill fs-9 fw-bold">
+                    {recipientCount} students
+                  </span>
+                </div>
+
+                {/* Active Filter Chips Summary */}
+                {audienceMode !== 'all' && (filters.college || filters.branch || filters.graduationYear || filters.minCgpa) && (
+                  <div className="mb-3 p-2 bg-light rounded-3 border border-light-subtle">
+                    <span className="text-muted fs-9 d-block mb-1.5 fw-semibold">Active filters:</span>
+                    <div className="d-flex flex-wrap gap-1.5">
+                      {filters.college && (
+                        <span className="badge bg-white text-dark border shadow-2xs fs-9 fw-normal d-inline-flex align-items-center gap-1 rounded-pill px-2 py-1">
+                          {filters.college}
+                          <button type="button" className="btn-close ms-1" style={{ fontSize: '0.65rem' }} onClick={() => setFilters({ ...filters, college: '' })} />
+                        </span>
+                      )}
+                      {filters.branch && (
+                        <span className="badge bg-white text-dark border shadow-2xs fs-9 fw-normal d-inline-flex align-items-center gap-1 rounded-pill px-2 py-1">
+                          {filters.branch}
+                          <button type="button" className="btn-close ms-1" style={{ fontSize: '0.65rem' }} onClick={() => setFilters({ ...filters, branch: '' })} />
+                        </span>
+                      )}
+                      {filters.graduationYear && (
+                        <span className="badge bg-white text-dark border shadow-2xs fs-9 fw-normal d-inline-flex align-items-center gap-1 rounded-pill px-2 py-1">
+                          Year: {filters.graduationYear}
+                          <button type="button" className="btn-close ms-1" style={{ fontSize: '0.65rem' }} onClick={() => setFilters({ ...filters, graduationYear: '' })} />
+                        </span>
+                      )}
+                      {filters.minCgpa && (
+                        <span className="badge bg-white text-dark border shadow-2xs fs-9 fw-normal d-inline-flex align-items-center gap-1 rounded-pill px-2 py-1">
+                          CGPA ≥ {filters.minCgpa}
+                          <button type="button" className="btn-close ms-1" style={{ fontSize: '0.65rem' }} onClick={() => setFilters({ ...filters, minCgpa: '' })} />
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Filter Criteria Inputs */}
+                {audienceMode !== 'all' && (
+                  <div className="pt-3 border-top mb-3">
+                    <label className="form-label small fw-semibold text-secondary m-0 mb-2">Filter criteria</label>
+                    <Input
+                      label="College / University"
+                      name="collegeFilter"
+                      value={filters.college}
+                      onChange={(e) => setFilters({ ...filters, college: e.target.value })}
+                      placeholder="All Colleges"
+                    />
+
+                    <Input
+                      label="Branch / Stream"
+                      name="branchFilter"
+                      value={filters.branch}
+                      onChange={(e) => setFilters({ ...filters, branch: e.target.value })}
+                      placeholder="All Branches"
+                    />
+
+                    <div className="row g-2">
+                      <div className="col-6">
+                        <Input
+                          label="Passout Year"
+                          name="gradYearFilter"
+                          type="number"
+                          value={filters.graduationYear}
+                          onChange={(e) => setFilters({ ...filters, graduationYear: e.target.value })}
+                          placeholder="2026"
+                        />
+                      </div>
+                      <div className="col-6">
+                        <Input
+                          label="Min CGPA"
+                          name="cgpaFilter"
+                          type="number"
+                          step="0.1"
+                          value={filters.minCgpa}
+                          onChange={(e) => setFilters({ ...filters, minCgpa: e.target.value })}
+                          placeholder="0.0"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Schedule Launch Section */}
+                <div className="pt-3 border-top">
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <div className="d-flex align-items-center gap-1.5">
+                      <Calendar size={15} className="text-primary" />
+                      <span className="fw-semibold text-dark fs-9">Schedule launch</span>
+                    </div>
+                    <span className="text-muted fs-9">Optional</span>
+                  </div>
+                  <Input
+                    name="scheduledAt"
+                    type="datetime-local"
+                    value={scheduledAt}
+                    onChange={(e) => setScheduledAt(e.target.value)}
+                  />
+                  <span className="text-muted fs-9 d-block mt-1">Leave empty to dispatch campaign immediately.</span>
+                </div>
               </div>
 
               {/* Action Buttons */}
               <div className="card border-0 shadow-sm rounded-4 bg-surface p-4">
-                <div className="d-grid gap-2.5">
+                <div className="d-grid gap-2 mb-3">
                   <Button
                     type="button"
                     variant="outline"
                     icon={Eye}
                     onClick={() => setShowPreviewModal(true)}
+                    className="w-100 py-2.5 rounded-3"
                   >
                     Live Device Preview
                   </Button>
@@ -441,16 +608,21 @@ const Composer = () => {
                     variant="outline"
                     icon={Mail}
                     onClick={() => setShowTestEmailModal(true)}
+                    className="w-100 py-2.5 rounded-3"
                   >
                     Send Test Email
                   </Button>
+                </div>
 
+                <div className="pt-3 border-top text-center">
+                  <p className="text-muted fs-9 mb-2.5">Ready to review your campaign before dispatch?</p>
                   <Button
                     type="submit"
                     variant="primary"
                     icon={Send}
                     disabled={submitting || recipientCount === 0}
                     loading={submitting ? 'Creating Campaign...' : false}
+                    className="w-100 py-3 rounded-3 fw-bold fs-8 shadow-sm"
                   >
                     Review & Launch Campaign
                   </Button>
@@ -582,8 +754,10 @@ const Composer = () => {
         <Modal
           isOpen={showRecipientsModal}
           onClose={() => setShowRecipientsModal(false)}
-          title={`Target Candidate Roster (${recipientCount})`}
-          subtitle="List of students matching active audience filters who will receive this campaign."
+          title={audienceMode === 'new_since_last_campaign' ? `New Student Roster (${recipientCount})` : `Target Candidate Roster (${recipientCount})`}
+          subtitle={audienceMode === 'new_since_last_campaign' 
+            ? `Students added after the last completed campaign${lastCampaignMeta ? ` (${lastCampaignMeta.title})` : ''}.` 
+            : "List of students matching active audience filters who will receive this campaign."}
           size="lg"
         >
           {loadingRecipientsList ? (

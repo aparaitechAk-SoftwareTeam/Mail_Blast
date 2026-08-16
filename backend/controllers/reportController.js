@@ -97,7 +97,8 @@ const getDetailedReports = async (req, res) => {
     }
 
     const timelineData = campaigns.slice(0, 7).map(c => ({
-      name: c.title.length > 18 ? c.title.substring(0, 18) + '...' : c.title,
+      name: c.title,
+      fullTitle: c.title,
       sent: c.sentCount || 0,
       failed: c.failedCount || 0
     })).reverse();

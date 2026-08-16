@@ -63,7 +63,7 @@ const getCampaignById = async (req, res) => {
 
 const createCampaign = async (req, res) => {
   try {
-    const { title, subject, bodyHtml, templateId, targetFilters, scheduledAt } = req.body;
+    const { title, subject, bodyHtml, templateId, targetFilters, scheduledAt, audienceMode = 'filtered' } = req.body;
 
     if (!title || !subject || !bodyHtml) {
       return res.status(400).json({ message: 'Campaign title, subject, and email body are required' });
@@ -75,23 +75,52 @@ const createCampaign = async (req, res) => {
     // Query targeted students
     let targetStudents = [];
     const filters = targetFilters || {};
+    let lastCampaign = null;
+    let baselineTimestamp = null;
 
     if (isMongo) {
       const query = { isSubscribed: true };
-      if (filters.college) query.college = filters.college;
-      if (filters.branch) query.branch = filters.branch;
-      if (filters.graduationYear) query.graduationYear = parseInt(filters.graduationYear);
-      if (filters.minCgpa) query.cgpa = { $gte: parseFloat(filters.minCgpa) };
-      if (filters.placementStatus) query.placementStatus = filters.placementStatus;
 
-      targetStudents = await Student.find(query);
+      if (audienceMode === 'new_since_last_campaign') {
+        lastCampaign = await Campaign.findOne({ status: 'Completed' }).sort({ completedAt: -1, createdAt: -1 });
+        if (lastCampaign) {
+          baselineTimestamp = lastCampaign.completedAt || lastCampaign.createdAt;
+          query.createdAt = { $gt: baselineTimestamp };
+        } else {
+          // No baseline campaign exists
+          query._id = null;
+        }
+      }
+
+      if (audienceMode !== 'all') {
+        if (filters.college) query.college = filters.college;
+        if (filters.branch) query.branch = filters.branch;
+        if (filters.graduationYear) query.graduationYear = parseInt(filters.graduationYear);
+        if (filters.minCgpa) query.cgpa = { $gte: parseFloat(filters.minCgpa) };
+        if (filters.placementStatus) query.placementStatus = filters.placementStatus;
+      }
+
+      targetStudents = query._id === null ? [] : await Student.find(query);
     } else {
       let stList = store.students.filter(s => s.isSubscribed !== false);
-      if (filters.college) stList = stList.filter(s => s.college === filters.college);
-      if (filters.branch) stList = stList.filter(s => s.branch === filters.branch);
-      if (filters.graduationYear) stList = stList.filter(s => s.graduationYear === parseInt(filters.graduationYear));
-      if (filters.minCgpa) stList = stList.filter(s => s.cgpa >= parseFloat(filters.minCgpa));
-      if (filters.placementStatus) stList = stList.filter(s => s.placementStatus === filters.placementStatus);
+
+      if (audienceMode === 'new_since_last_campaign') {
+        lastCampaign = store.campaigns.find(c => c.status === 'Completed');
+        if (lastCampaign) {
+          baselineTimestamp = new Date(lastCampaign.completedAt || lastCampaign.createdAt);
+          stList = stList.filter(s => new Date(s.createdAt || Date.now()) > baselineTimestamp);
+        } else {
+          stList = [];
+        }
+      }
+
+      if (audienceMode !== 'all') {
+        if (filters.college) stList = stList.filter(s => s.college === filters.college);
+        if (filters.branch) stList = stList.filter(s => s.branch === filters.branch);
+        if (filters.graduationYear) stList = stList.filter(s => s.graduationYear === parseInt(filters.graduationYear));
+        if (filters.minCgpa) stList = stList.filter(s => s.cgpa >= parseFloat(filters.minCgpa));
+        if (filters.placementStatus) stList = stList.filter(s => s.placementStatus === filters.placementStatus);
+      }
       targetStudents = stList;
     }
 
@@ -109,6 +138,9 @@ const createCampaign = async (req, res) => {
         createdBy: req.user._id,
         createdByName: req.user.name,
         targetFilters: filters,
+        audienceMode: audienceMode || 'filtered',
+        baselineCampaignId: lastCampaign ? lastCampaign._id : null,
+        baselineTimestamp: baselineTimestamp || null,
         totalRecipients,
         sentCount: 0,
         failedCount: 0,

@@ -24,11 +24,144 @@
   --primary: #6366F1;
   --primary-hover: #4F46E5;
   --secondary: #94A3B8;
-  --background: #0F172A;
-  --surface: #1E293B;
-  --border: #334155;
+  --background: #0B132B;
+  --surface: #1C2541;
+  --surface-elevated: #243156;
+  --border: #2D3A5E;
   --text-primary: #F8FAFC;
-  --text-secondary: #94A3B8;
+  --text-secondary: #CBD5E1;
+  --text-muted: #94A3B8;
+
+  color: var(--text-primary);
+  background-color: var(--background);
+}
+
+/* Global Dark Mode Overrides for Bootstrap Utilities */
+[data-theme="dark"] .text-dark,
+[data-theme="dark"] .text-black,
+[data-theme="dark"] .text-body {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .text-muted,
+[data-theme="dark"] .text-secondary {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .bg-white,
+[data-theme="dark"] .bg-light,
+[data-theme="dark"] .bg-surface {
+  background-color: var(--surface) !important;
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .bg-light-subtle,
+[data-theme="dark"] .bg-gray-50 {
+  background-color: var(--surface-elevated) !important;
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .border,
+[data-theme="dark"] .border-top,
+[data-theme="dark"] .border-bottom,
+[data-theme="dark"] .border-start,
+[data-theme="dark"] .border-end,
+[data-theme="dark"] .border-light,
+[data-theme="dark"] .border-light-subtle,
+[data-theme="dark"] .border-gray-200 {
+  border-color: var(--border) !important;
+}
+
+[data-theme="dark"] .card {
+  background-color: var(--surface) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .card-header,
+[data-theme="dark"] .card-footer {
+  background-color: var(--surface-elevated) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .top-navbar {
+  background-color: var(--surface) !important;
+  border-bottom-color: var(--border) !important;
+}
+
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .form-select,
+[data-theme="dark"] .form-control-custom,
+[data-theme="dark"] .form-select-custom {
+  background-color: var(--surface-elevated) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .form-control::placeholder,
+[data-theme="dark"] .form-select::placeholder {
+  color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] .form-label {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .modal-content {
+  background-color: var(--surface) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .modal-header,
+[data-theme="dark"] .modal-footer {
+  background-color: var(--surface-elevated) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .btn-close {
+  filter: invert(1) grayscale(100%) brightness(200%);
+}
+
+[data-theme="dark"] .list-group-item {
+  background-color: var(--surface) !important;
+  border-color: var(--border) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .custom-table,
+[data-theme="dark"] .table {
+  background-color: var(--surface) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border) !important;
+}
+
+[data-theme="dark"] .custom-table th,
+[data-theme="dark"] .table th {
+  background-color: var(--surface-elevated) !important;
+  color: var(--text-secondary) !important;
+  border-bottom-color: var(--border) !important;
+}
+
+[data-theme="dark"] .custom-table td,
+[data-theme="dark"] .table td {
+  background-color: var(--surface) !important;
+  color: var(--text-primary) !important;
+  border-bottom-color: var(--border) !important;
+}
+
+[data-theme="dark"] .custom-table tbody tr:hover,
+[data-theme="dark"] .table tbody tr:hover {
+  background-color: var(--surface-elevated) !important;
+}
+
+[data-theme="dark"] .badge-draft { background: var(--surface-elevated); color: var(--text-secondary); border-color: var(--border); }
+[data-theme="dark"] .badge-unplaced { background: var(--surface-elevated); color: var(--text-secondary); border-color: var(--border); }
+[data-theme="dark"] .btn-ghost-custom:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
 }
 
 body {

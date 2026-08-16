@@ -240,63 +240,101 @@ const Students = () => {
       <Navbar title="Student Directory" />
 
       <div className="page-container">
-        {/* Controls Header */}
-        <div className="card border-0 shadow-sm rounded-4 bg-surface p-4 mb-4">
-          <div className="row g-3 align-items-center">
-            <div className="col-12 col-md-4">
+        {/* Enterprise Toolbar Container */}
+        <div className="card border-0 shadow-sm rounded-4 bg-surface p-3 p-md-3.5 mb-4">
+          <div className="d-flex flex-column flex-xl-row align-items-stretch align-items-xl-center justify-content-between gap-2.5">
+            {/* Search Input Control */}
+            <div className="flex-grow-1" style={{ maxWidth: '420px', minWidth: '260px' }}>
               <form onSubmit={handleSearchSubmit}>
-                <Input
-                  name="search"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by name, email, college..."
-                  icon={Search}
-                  className="m-0"
-                />
+                <div className="position-relative">
+                  <Search size={16} className="position-absolute top-50 start-0 translate-middle-y ms-3 text-muted" />
+                  <input
+                    type="text"
+                    name="search"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search by name, email, college..."
+                    aria-label="Search by name, email, college"
+                    className="form-control form-control-custom ps-5 py-2 fs-9 border shadow-none"
+                    style={{ height: '44px', borderRadius: '10px' }}
+                  />
+                </div>
               </form>
             </div>
 
-            <div className="col-12 col-md-8 d-flex flex-wrap align-items-center justify-content-md-end gap-2">
-              <Select
-                name="college"
-                value={college}
-                onChange={(e) => { setCollege(e.target.value); setPage(1); }}
-                options={meta.colleges.map(c => ({ label: c, value: c }))}
-                placeholder="All Colleges"
-                className="m-0 w-auto"
-              />
+            {/* Filter Dropdowns & Action Buttons */}
+            <div className="d-flex flex-column flex-sm-row flex-wrap align-items-stretch align-items-sm-center justify-content-xl-end gap-2 flex-grow-1">
+              <div className="flex-grow-1 flex-sm-grow-0" style={{ minWidth: '170px' }}>
+                <select
+                  name="college"
+                  value={college}
+                  onChange={(e) => { setCollege(e.target.value); setPage(1); }}
+                  aria-label="Filter by College"
+                  className="form-select form-select-custom w-100 py-2 fs-9 border shadow-none"
+                  style={{ height: '44px', borderRadius: '10px' }}
+                >
+                  <option value="">All Colleges</option>
+                  {meta.colleges.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
 
-              <Select
-                name="branch"
-                value={branch}
-                onChange={(e) => { setBranch(e.target.value); setPage(1); }}
-                options={meta.branches.map(b => ({ label: b, value: b }))}
-                placeholder="All Branches"
-                className="m-0 w-auto"
-              />
+              <div className="flex-grow-1 flex-sm-grow-0" style={{ minWidth: '170px' }}>
+                <select
+                  name="branch"
+                  value={branch}
+                  onChange={(e) => { setBranch(e.target.value); setPage(1); }}
+                  aria-label="Filter by Branch"
+                  className="form-select form-select-custom w-100 py-2 fs-9 border shadow-none"
+                  style={{ height: '44px', borderRadius: '10px' }}
+                >
+                  <option value="">All Branches</option>
+                  {meta.branches.map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
 
-              <Select
-                name="placementStatus"
-                value={placementStatus}
-                onChange={(e) => { setPlacementStatus(e.target.value); setPage(1); }}
-                options={[
-                  { label: 'Unplaced', value: 'Unplaced' },
-                  { label: 'Placed', value: 'Placed' },
-                  { label: 'Internship Only', value: 'Internship Only' }
-                ]}
-                placeholder="All Statuses"
-                className="m-0 w-auto"
-              />
+              <div className="flex-grow-1 flex-sm-grow-0" style={{ minWidth: '140px' }}>
+                <select
+                  name="placementStatus"
+                  value={placementStatus}
+                  onChange={(e) => { setPlacementStatus(e.target.value); setPage(1); }}
+                  aria-label="Filter by Placement Status"
+                  className="form-select form-select-custom w-100 py-2 fs-9 border shadow-none"
+                  style={{ height: '44px', borderRadius: '10px' }}
+                >
+                  <option value="">All Statuses</option>
+                  <option value="Unplaced">Unplaced</option>
+                  <option value="Placed">Placed</option>
+                  <option value="Internship Only">Internship Only</option>
+                </select>
+              </div>
 
-              <Button variant="outline" icon={Download} onClick={handleExportCSV}>
-                Export CSV
-              </Button>
-
-              {user?.role !== 'Viewer' && (
-                <Button variant="primary" icon={Plus} onClick={handleOpenAddModal}>
-                  Add Student
+              <div className="d-flex align-items-center gap-2 flex-grow-1 flex-sm-grow-0">
+                <Button 
+                  variant="outline" 
+                  icon={Download} 
+                  onClick={handleExportCSV}
+                  className="flex-grow-1 flex-sm-grow-0 py-2 px-3 fs-9"
+                  style={{ height: '44px', borderRadius: '10px', whiteSpace: 'nowrap' }}
+                >
+                  Export CSV
                 </Button>
-              )}
+
+                {user?.role !== 'Viewer' && (
+                  <Button 
+                    variant="primary" 
+                    icon={Plus} 
+                    onClick={handleOpenAddModal}
+                    className="flex-grow-1 flex-sm-grow-0 py-2 px-3 fs-9 fw-bold"
+                    style={{ height: '44px', borderRadius: '10px', whiteSpace: 'nowrap' }}
+                  >
+                    Add Student
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
 
