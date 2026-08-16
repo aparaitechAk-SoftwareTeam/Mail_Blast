@@ -31,7 +31,7 @@ const { getStudents, createStudent, updateStudent, deleteStudent, bulkDeleteStud
 const { previewUpload, confirmImport } = require('./controllers/uploadController');
 const { getCampaigns, getCampaignById, createCampaign, launchCampaign, retryFailedEmails, sendTestEmail, directSmtpTest } = require('./controllers/campaignController');
 const { getTemplates, createTemplate, updateTemplate, deleteTemplate } = require('./controllers/templateController');
-const { getDashboardStats, getDetailedReports } = require('./controllers/reportController');
+const { getDashboardStats, getDetailedReports, getPublicSummaryStats } = require('./controllers/reportController');
 const { getUsers, createUser, updateUser, deleteUser } = require('./controllers/userController');
 const { getSuppressions, addSuppression, removeSuppression } = require('./controllers/suppressionController');
 const { getAuditLogs } = require('./controllers/auditController');
@@ -63,7 +63,7 @@ const apiLimiter = rateLimit({
 });
 app.use('/api', apiLimiter);
 
-// System Health Check
+// System Health & Public Summary Routes
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'online',
@@ -71,6 +71,7 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date()
   });
 });
+app.get('/api/public/summary', getPublicSummaryStats);
 
 // Auth Routes
 app.post('/api/auth/login', loginUser);

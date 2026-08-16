@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const SystemSettings = require('../models/SystemSettings');
 const SmtpGateway = require('../models/SmtpGateway');
 const EmailLog = require('../models/EmailLog');
@@ -57,8 +58,10 @@ const ensureDefaultGateway = async () => {
 
 // Calculate daily sent count for a specific gateway
 const getGatewayDailyUsage = async (gatewayId) => {
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
+  const startOfCalendarDay = new Date();
+  startOfCalendarDay.setHours(0, 0, 0, 0);
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const effectiveStart = twentyFourHoursAgo < startOfCalendarDay ? twentyFourHoursAgo : startOfCalendarDay;
 
   const isMongo = getIsConnected();
   if (isMongo) {
@@ -76,7 +79,7 @@ const getGatewayDailyUsage = async (gatewayId) => {
       if (isFirstGateway) {
         gatewayFilter = {
           $or: [
-            { gatewayId: gObjId || gIdStr },
+            { gatewayId: gObjId },
             { gatewayId: gIdStr },
             { gatewayId: null },
             { gatewayId: { $exists: false } }
@@ -85,7 +88,7 @@ const getGatewayDailyUsage = async (gatewayId) => {
       } else {
         gatewayFilter = {
           $or: [
-            { gatewayId: gObjId || gIdStr },
+            { gatewayId: gObjId },
             { gatewayId: gIdStr }
           ]
         };
@@ -94,7 +97,8 @@ const getGatewayDailyUsage = async (gatewayId) => {
 
     const query = {
       status: 'Sent',
-      sentAt: { $gte: startOfDay },
+      sentAt: { $gte: effectiveStart },
+      campaignId: { $ne: null },
       ...gatewayFilter
     };
 
@@ -104,8 +108,9 @@ const getGatewayDailyUsage = async (gatewayId) => {
     return (store.emailLogs || []).filter(l => {
       const matchGateway = !gatewayId || String(l.gatewayId) === String(gatewayId);
       const isSent = l.status === 'Sent';
+      const isCampaign = !!l.campaignId;
       const sentTime = l.sentAt ? new Date(l.sentAt) : new Date(0);
-      return matchGateway && isSent && sentTime >= startOfDay;
+      return matchGateway && isSent && isCampaign && sentTime >= effectiveStart;
     }).length;
   }
 };

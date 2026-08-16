@@ -1,8 +1,9 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { AuthContext } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import EmailBlastIntro from '../components/common/EmailBlastIntro';
 import { 
   Mail, 
   Lock, 
@@ -31,6 +32,18 @@ const Login = () => {
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const [loading, setLoading] = useState(false);
+
+  const [showIntro, setShowIntro] = useState(() => {
+    const shown = sessionStorage.getItem('emailBlastIntroShown');
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return !shown && !prefersReducedMotion;
+  });
+
+  useEffect(() => {
+    if (showIntro) {
+      sessionStorage.setItem('emailBlastIntroShown', 'true');
+    }
+  }, [showIntro]);
 
   const { login } = useContext(AuthContext);
   const toast = useToast();
@@ -93,6 +106,13 @@ const Login = () => {
           borderRight: '1px solid rgba(255, 255, 255, 0.08)'
         }}
       >
+        {/* Animated 20-Second Email Blast Intro Overlay */}
+        <AnimatePresence>
+          {showIntro && (
+            <EmailBlastIntro onComplete={() => setShowIntro(false)} />
+          )}
+        </AnimatePresence>
+
         {/* Subtle Dots & Grid Background Overlay */}
         <div 
           style={{

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import Navbar from '../components/common/Navbar';
 import { useToast } from '../context/ToastContext';
+import { SocketContext } from '../context/SocketContext';
 import { 
   Server, 
   Shield, 
@@ -39,6 +40,7 @@ import { formatDate } from '../utils/formatters';
 
 const Settings = () => {
   const toast = useToast();
+  const socket = useContext(SocketContext);
   const [loading, setLoading] = useState(true);
 
   // Gateway Pool State
@@ -82,8 +84,22 @@ const Settings = () => {
       loadGateways();
     }, 30000);
 
+    if (socket) {
+      const handleLiveUpdate = () => {
+        loadGateways();
+      };
+      socket.on('campaign:progress', handleLiveUpdate);
+      socket.on('campaign:email-status', handleLiveUpdate);
+
+      return () => {
+        clearInterval(interval);
+        socket.off('campaign:progress', handleLiveUpdate);
+        socket.off('campaign:email-status', handleLiveUpdate);
+      };
+    }
+
     return () => clearInterval(interval);
-  }, []);
+  }, [socket]);
 
   const loadGateways = async () => {
     try {
@@ -248,18 +264,18 @@ const Settings = () => {
         {/* 1. Header & Gateway Pool Counter */}
         <div className="d-flex align-items-sm-center justify-content-between mb-4 flex-column flex-sm-row gap-3">
           <div>
-            <div className="text-uppercase text-primary fw-bold tracking-wider fs-8 mb-1" style={{ letterSpacing: '0.08em' }}>
+            <div className="text-uppercase text-primary fw-bold tracking-wider fs-9 mb-1" style={{ letterSpacing: '0.08em' }}>
               SMTP INFRASTRUCTURE
             </div>
             <h4 className="fw-bold text-dark m-0">SMTP Gateway Pool</h4>
             <p className="text-muted small m-0 mt-0.5">Manage authorized Brevo SMTP delivery gateways and monitor daily capacity.</p>
           </div>
 
-          <div className="d-flex align-items-center gap-2">
+          <div className="d-flex align-items-center gap-2.5">
             <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 rounded-pill fs-8 fw-bold">
               {gateways.length} / 3 SMTP Gateways
             </span>
-            {gateways.length < 3 && (
+            {gateways.length < 3 ? (
               <Button 
                 variant="primary" 
                 icon={Plus} 
@@ -269,13 +285,21 @@ const Settings = () => {
               >
                 Add Gateway
               </Button>
+            ) : (
+              <button 
+                disabled 
+                className="btn btn-outline-secondary rounded-pill px-3 py-2 fs-8 fw-semibold" 
+                style={{ height: '40px', opacity: 0.7 }}
+              >
+                3 / 3 Limit Reached
+              </button>
             )}
           </div>
         </div>
 
-        {/* 2. SMTP Gateway Cards Grid */}
-        <div className="row g-4 mb-4">
-          {gateways.map((gw, idx) => {
+        {/* 2. SMTP Gateway Cards Grid (Equal Heights & Premium Simple Admin Layout) */}
+        <div className="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4 mb-4">
+          {gateways.map((gw) => {
             const hasUsageData = typeof gw.dailyUsage === 'number' && typeof gw.dailyQuota === 'number' && typeof gw.remainingCapacity === 'number';
             const usagePct = hasUsageData 
               ? (typeof gw.usagePercentage === 'number' ? gw.usagePercentage : Math.min(100, Math.round((gw.dailyUsage / gw.dailyQuota) * 100))) 
@@ -289,17 +313,21 @@ const Settings = () => {
               'bg-danger-subtle text-danger border-danger-subtle';
 
             return (
-              <div key={gw._id} className="col-12 col-md-6 col-xl-4">
-                <div className="card border shadow-sm rounded-4 bg-surface h-100 p-4 d-flex flex-column" style={{ borderRadius: '16px', borderColor: 'var(--border, #E2E8F0)' }}>
-                  {/* Premium Gateway Header */}
+              <div key={gw._id} className="col d-flex">
+                <div 
+                  className="card border shadow-sm bg-white p-4 w-100 d-flex flex-column h-100" 
+                  style={{ borderRadius: '16px', borderColor: '#E5E7EB' }}
+                >
+                  
+                  {/* Card Header (Gateway Name, Provider, Status Pill) */}
                   <div className="d-flex align-items-start justify-content-between mb-3 pb-3 border-bottom gap-2">
-                    <div className="d-flex align-items-center gap-2.5">
-                      <div className="p-2.5 rounded-3 bg-primary-subtle text-primary flex-shrink-0" style={{ width: '42px', height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div className="d-flex align-items-center gap-2.5 min-w-0">
+                      <div className="p-2 rounded-3 bg-primary-subtle text-primary flex-shrink-0" style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Server size={20} />
                       </div>
-                      <div>
-                        <h6 className="fw-bold text-dark m-0 fs-6">{gw.gatewayName}</h6>
-                        <span className="text-muted fs-8 d-block">{gw.provider || 'Brevo SMTP Relay'}</span>
+                      <div className="min-w-0">
+                        <h6 className="fw-semibold text-dark m-0 fs-6" style={{ whiteSpace: 'nowrap' }}>{gw.gatewayName}</h6>
+                        <span className="text-muted fs-8 d-block" style={{ whiteSpace: 'nowrap' }}>{gw.provider || 'Brevo SMTP Relay'}</span>
                       </div>
                     </div>
 
@@ -308,53 +336,40 @@ const Settings = () => {
                     </span>
                   </div>
 
-                  {/* Gateway Information Section with Lucide Icons (NO TRUNCATION) */}
+                  {/* Clean 3-Row Information Block (No Nested Cards, Two Columns) */}
                   <div className="d-flex flex-column gap-2 mb-3.5 fs-8">
-                    <div className="d-flex align-items-center justify-content-between p-2.5 bg-light rounded-3 gap-2">
-                      <div className="d-flex align-items-center gap-2 flex-shrink-0 text-muted">
-                        <Globe size={14} className="text-primary" />
-                        <span>Host Server</span>
-                      </div>
-                      <code className="text-dark bg-white px-2 py-1 rounded border fs-9 text-end" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                    <div className="d-flex align-items-center justify-content-between gap-2">
+                      <span className="text-muted fs-9 flex-shrink-0" style={{ whiteSpace: 'nowrap' }}>SMTP Host</span>
+                      <span className="fw-semibold text-dark fs-9 font-monospace text-end" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                         {gw.smtpHost}:{gw.smtpPort}
-                      </code>
+                      </span>
                     </div>
 
-                    <div className="d-flex align-items-center justify-content-between p-2.5 bg-light rounded-3 gap-2">
-                      <div className="d-flex align-items-center gap-2 flex-shrink-0 text-muted">
-                        <User size={14} className="text-primary" />
-                        <span>Sender Name</span>
-                      </div>
-                      <span className="fw-semibold text-dark fs-8 text-end" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                    <div className="d-flex align-items-center justify-content-between gap-2">
+                      <span className="text-muted fs-9 flex-shrink-0" style={{ whiteSpace: 'nowrap' }}>Sender</span>
+                      <span className="fw-semibold text-dark fs-9 text-end" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                         {gw.fromName}
                       </span>
                     </div>
 
-                    <div className="d-flex align-items-center justify-content-between p-2.5 bg-light rounded-3 gap-2">
-                      <div className="d-flex align-items-center gap-2 flex-shrink-0 text-muted">
-                        <Mail size={14} className="text-primary" />
-                        <span>Sender Email</span>
-                      </div>
-                      <code className="text-dark bg-white px-2 py-1 rounded border fs-9 text-end" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                    <div className="d-flex align-items-center justify-content-between gap-2">
+                      <span className="text-muted fs-9 flex-shrink-0" style={{ whiteSpace: 'nowrap' }}>From</span>
+                      <span className="fw-semibold text-dark fs-9 text-end font-monospace" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
                         {gw.fromEmail}
-                      </code>
+                      </span>
                     </div>
                   </div>
 
-                  {/* Today's Usage Breakdown (Soft-Highlight Enterprise Panel) */}
-                  <div className="p-3.5 rounded-4 border mb-3" style={{ backgroundColor: 'var(--surface-subtle, #F8FAFC)', borderColor: 'var(--border, #E2E8F0)' }}>
-                    <div className="d-flex align-items-center justify-content-between mb-2">
-                      <span className="text-muted fs-8 fw-bold text-uppercase" style={{ letterSpacing: '0.05em' }}>Today's Usage</span>
-                      <span className="fw-bold text-dark fs-7">
-                        {hasUsageData ? (
-                          <>
-                            <span className="fs-6 text-primary">{gw.dailyUsage}</span> / {gw.dailyQuota} <span className="fs-9 text-muted font-normal">emails</span>
-                          </>
-                        ) : 'Usage unavailable'}
+                  {/* Today's Usage Breakdown (Visual Focus) */}
+                  <div className="p-3 rounded-3 bg-light border mb-3">
+                    <div className="d-flex align-items-center justify-content-between mb-1.5">
+                      <span className="text-muted fs-9 fw-semibold text-uppercase" style={{ letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>TODAY'S USAGE</span>
+                      <span className="fw-bold text-dark fs-5 font-monospace">
+                        {hasUsageData ? `${gw.dailyUsage} / ${gw.dailyQuota} emails` : 'Usage unavailable'}
                       </span>
                     </div>
 
-                    <div className="progress mb-2" style={{ height: '8px', borderRadius: '4px', backgroundColor: '#E2E8F0' }}>
+                    <div className="progress mb-1.5" style={{ height: '8px', borderRadius: '4px', backgroundColor: '#E2E8F0' }}>
                       <div 
                         className={`progress-bar ${usagePct >= 90 ? 'bg-danger' : usagePct >= 75 ? 'bg-warning' : 'bg-primary'}`} 
                         role="progressbar" 
@@ -362,46 +377,45 @@ const Settings = () => {
                       />
                     </div>
 
-                    <div className="d-flex align-items-center justify-content-between text-muted fs-9 mb-2.5">
-                      <span className="text-muted">Usage Progress</span>
-                      <span className="fw-bold text-dark">{hasUsageData ? `${usagePct}% used` : 'N/A'}</span>
+                    <div className="text-muted fs-9 mb-2.5 text-end fw-semibold text-dark">
+                      {hasUsageData ? `${usagePct}% used` : 'N/A'}
                     </div>
 
-                    <div className="pt-2.5 border-top row text-center g-2 align-items-center">
+                    <div className="pt-2 border-top row text-center g-1 align-items-center fs-9">
                       <div className="col-4">
-                        <span className="text-muted fs-9 d-block mb-0.5">Remaining</span>
-                        <span className="fw-bold text-dark fs-8 d-block">{hasUsageData ? `${gw.remainingCapacity}` : 'N/A'}</span>
-                        <span className="text-muted fs-9" style={{ fontSize: '0.7rem' }}>emails</span>
+                        <span className="text-muted d-block fs-9" style={{ whiteSpace: 'nowrap' }}>REMAINING</span>
+                        <span className="fw-bold text-dark d-block fs-6">{hasUsageData ? `${gw.remainingCapacity}` : '—'}</span>
+                        <span className="text-muted fs-9">emails</span>
                       </div>
                       <div className="col-4 border-start border-end">
-                        <span className="text-muted fs-9 d-block mb-0.5">Used</span>
-                        <span className="fw-bold text-primary fs-8 d-block">{hasUsageData ? `${gw.dailyUsage}` : 'N/A'}</span>
-                        <span className="text-muted fs-9" style={{ fontSize: '0.7rem' }}>emails</span>
+                        <span className="text-muted d-block fs-9" style={{ whiteSpace: 'nowrap' }}>USED</span>
+                        <span className="fw-bold text-primary d-block fs-6">{hasUsageData ? `${gw.dailyUsage}` : '—'}</span>
+                        <span className="text-muted fs-9">emails</span>
                       </div>
                       <div className="col-4">
-                        <span className="text-muted fs-9 d-block mb-0.5">Daily Quota</span>
-                        <span className="fw-bold text-dark fs-8 d-block">{hasUsageData ? `${gw.dailyQuota}` : 'N/A'}</span>
-                        <span className="text-muted fs-9" style={{ fontSize: '0.7rem' }}>emails</span>
+                        <span className="text-muted d-block fs-9" style={{ whiteSpace: 'nowrap' }}>DAILY LIMIT</span>
+                        <span className="fw-bold text-dark d-block fs-6">{hasUsageData ? `${gw.dailyQuota}` : '—'}</span>
+                        <span className="text-muted fs-9">emails</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Activity Section */}
-                  <div className="d-flex align-items-center justify-content-between text-muted fs-9 mb-3.5 px-1 flex-wrap gap-2">
-                    <div className="d-flex align-items-center gap-1.5">
-                      <Send size={13} className="text-primary flex-shrink-0" />
-                      <span>Last Send: <strong className="text-dark ms-0.5">{gw.lastSuccessfulSend ? formatDate(gw.lastSuccessfulSend) : 'Never'}</strong></span>
+                  {/* Compact Last Activity Section */}
+                  <div className="d-flex flex-column gap-1.5 text-muted fs-9 mb-3.5 px-1">
+                    <div className="d-flex align-items-center justify-content-between">
+                      <span className="text-muted">Last sent</span>
+                      <span className="fw-semibold text-dark">{gw.lastSuccessfulSend ? formatDate(gw.lastSuccessfulSend) : 'Never'}</span>
                     </div>
-                    <div className="d-flex align-items-center gap-1.5">
-                      <Clock size={13} className="text-muted flex-shrink-0" />
-                      <span>Last Test: <strong className="text-dark ms-0.5">{gw.lastConnectionTest ? formatDate(gw.lastConnectionTest) : 'Never'}</strong></span>
+                    <div className="d-flex align-items-center justify-content-between">
+                      <span className="text-muted">Last tested</span>
+                      <span className="fw-semibold text-dark">{gw.lastConnectionTest ? formatDate(gw.lastConnectionTest) : 'Never'}</span>
                     </div>
                   </div>
 
-                  {/* Action Footer Toolbar */}
+                  {/* Action Bar (Pinned to Bottom) */}
                   <div className="mt-auto pt-3 border-top d-flex align-items-center justify-content-between gap-2">
                     <Button
-                      variant="outline-custom"
+                      variant="primary"
                       size="sm"
                       icon={RefreshCw}
                       onClick={() => handleTestGatewayConnection(gw._id)}
@@ -416,7 +430,7 @@ const Settings = () => {
                       <button
                         onClick={() => handleOpenEditModal(gw)}
                         className="btn btn-sm btn-outline-secondary p-0 d-inline-flex align-items-center justify-content-center"
-                        title="Edit Gateway Settings"
+                        title="Edit gateway"
                         aria-label={`Edit ${gw.gatewayName}`}
                         style={{ width: '38px', height: '38px', borderRadius: '8px' }}
                       >
@@ -426,7 +440,7 @@ const Settings = () => {
                       <button
                         onClick={() => handleToggleGatewayStatus(gw)}
                         className={`btn btn-sm ${gw.isActive ? 'btn-outline-success' : 'btn-outline-secondary'} p-0 d-inline-flex align-items-center justify-content-center`}
-                        title={gw.isActive ? 'Disable Gateway' : 'Enable Gateway'}
+                        title={gw.isActive ? 'Disable gateway' : 'Enable gateway'}
                         aria-label={`${gw.isActive ? 'Disable' : 'Enable'} ${gw.gatewayName}`}
                         style={{ width: '38px', height: '38px', borderRadius: '8px' }}
                       >
@@ -437,7 +451,7 @@ const Settings = () => {
                         <button
                           onClick={() => setDeleteConfirm({ isOpen: true, id: gw._id, name: gw.gatewayName })}
                           className="btn btn-sm btn-outline-danger p-0 d-inline-flex align-items-center justify-content-center"
-                          title="Delete Gateway"
+                          title="Delete gateway"
                           aria-label={`Delete ${gw.gatewayName}`}
                           style={{ width: '38px', height: '38px', borderRadius: '8px' }}
                         >
