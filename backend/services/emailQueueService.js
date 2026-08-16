@@ -2,7 +2,8 @@ const Campaign = require('../models/Campaign');
 const EmailLog = require('../models/EmailLog');
 const Student = require('../models/Student');
 const Suppression = require('../models/Suppression');
-const { createTransporter, sendSingleEmail } = require('../config/mailer');
+const SmtpGateway = require('../models/SmtpGateway');
+const { createTransporter, sendSingleEmail, getActiveSmtpCredentials } = require('../config/mailer');
 const { emitCampaignProgress, emitEmailStatus } = require('../sockets/campaignSocket');
 const { getIsConnected, getMemoryStore } = require('../config/db');
 
@@ -24,6 +25,32 @@ const personalizeContent = (htmlContent, student) => {
     .replace(/\{PlacementStatus\}/gi, student.placementStatus || 'Unplaced');
 };
 
+// Calculate today's sent count for a specific gateway
+const getGatewayDailyUsage = async (gatewayId) => {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const isMongo = getIsConnected();
+  if (isMongo) {
+    const query = {
+      status: 'Sent',
+      sentAt: { $gte: startOfDay }
+    };
+    if (gatewayId) {
+      query.gatewayId = gatewayId;
+    }
+    return await EmailLog.countDocuments(query);
+  } else {
+    const store = getMemoryStore();
+    return (store.emailLogs || []).filter(l => {
+      const matchGateway = !gatewayId || String(l.gatewayId) === String(gatewayId);
+      const isSent = l.status === 'Sent';
+      const sentTime = l.sentAt ? new Date(l.sentAt) : new Date(0);
+      return matchGateway && isSent && sentTime >= startOfDay;
+    }).length;
+  }
+};
+
 const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
   const cid = String(campaignId);
   if (activeCampaignLocks.has(cid)) {
@@ -34,7 +61,6 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
   activeCampaignLocks.add(cid);
 
   try {
-    const transporter = await createTransporter();
     const isMongo = getIsConnected();
     const store = getMemoryStore();
 
@@ -70,8 +96,51 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
       }
     }
 
+    // 1. Resolve selected SMTP Gateway
+    let gateway = null;
+    if (campaign.smtpGatewayId) {
+      if (isMongo) {
+        gateway = await SmtpGateway.findById(campaign.smtpGatewayId);
+      } else {
+        gateway = (store.smtpGateways || []).find(g => String(g._id) === String(campaign.smtpGatewayId));
+      }
+    }
+
+    // Fallback to first active gateway if campaign has no selected gateway or gateway was deleted
+    if (!gateway) {
+      if (isMongo) {
+        gateway = await SmtpGateway.findOne({ isActive: true }).sort({ createdAt: 1 });
+      } else {
+        gateway = (store.smtpGateways || []).find(g => g.isActive !== false);
+      }
+    }
+
+    // 2. Validate Gateway status & credentials
+    if (gateway && gateway.isActive === false) {
+      console.error(`[QUEUE ERROR] Selected gateway "${gateway.gatewayName}" is currently disabled/inactive.`);
+      campaign.status = 'Failed';
+      if (isMongo) await campaign.save();
+      emitCampaignProgress(cid, { campaignId: cid, status: 'Failed', error: 'Selected SMTP Gateway is disabled' });
+      activeCampaignLocks.delete(cid);
+      return;
+    }
+
+    // 3. Calculate Gateway capacity & quota
+    const dailyQuota = gateway?.dailyQuota || 300;
+    const dailyUsage = await getGatewayDailyUsage(gateway?._id);
+    let remainingCapacity = Math.max(0, dailyQuota - dailyUsage);
+
+    console.log(`[QUEUE GATEWAY INITIALIZED] Gateway: "${gateway?.gatewayName || 'Default Brevo Gateway'}" | Quota: ${dailyQuota} | Today's Usage: ${dailyUsage} | Remaining: ${remainingCapacity}`);
+
+    // Create Nodemailer Transporter for this specific Gateway
+    const transporter = gateway ? await createTransporter(gateway) : await createTransporter();
+
     campaign.status = 'Sending';
     campaign.startedAt = campaign.startedAt || new Date();
+    if (!campaign.smtpGatewayName && gateway) {
+      campaign.smtpGatewayName = gateway.gatewayName;
+      campaign.smtpGatewayId = gateway._id;
+    }
     
     if (isMongo) {
       await campaign.save();
@@ -100,7 +169,7 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
         log.status = 'Failed';
         log.errorMessage = `Maximum retry attempts (${MAX_RETRY_ATTEMPTS}) exceeded`;
         if (isMongo) await log.save();
-        emitEmailStatus(cid, { logId: log._id, recipientEmail, status: 'Failed', error: log.errorMessage });
+        emitEmailStatus(cid, { logId: log._id, recipientEmail, status: 'Failed', error: log.errorMessage, gatewayId: gateway?._id, gatewayName: gateway?.gatewayName });
         continue;
       }
 
@@ -111,9 +180,20 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
         failed++;
         if (isMongo) await log.save();
         
-        emitEmailStatus(cid, { logId: log._id, recipientEmail, status: 'Suppressed', error: log.errorMessage });
+        emitEmailStatus(cid, { logId: log._id, recipientEmail, status: 'Suppressed', error: log.errorMessage, gatewayId: gateway?._id, gatewayName: gateway?.gatewayName });
         emitCampaignProgress(cid, { campaignId: cid, sentCount: sent, failedCount: failed, totalRecipients: campaign.totalRecipients, progressPct: Math.round((sent + failed) / campaign.totalRecipients * 100) });
         continue;
+      }
+
+      // CHECK GATEWAY QUOTA CAPACITY BEFORE EACH DISPATCH
+      if (remainingCapacity <= 0) {
+        console.warn(`[GATEWAY QUOTA REACHED] Gateway "${gateway?.gatewayName || 'Gateway'}" has reached its daily quota limit (${dailyQuota}). Leaving remaining recipients Pending.`);
+        log.status = 'Pending';
+        log.errorMessage = `Pending — Gateway Quota Reached (${dailyQuota}/day)`;
+        if (isMongo) await log.save();
+
+        emitEmailStatus(cid, { logId: log._id, recipientEmail, status: 'Pending', error: log.errorMessage, gatewayId: gateway?._id, gatewayName: gateway?.gatewayName });
+        continue; // Skip dispatching, remain pending for manual continuation
       }
 
       // Atomic transition to Sending before send
@@ -141,11 +221,13 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
       const personalizedHtml = personalizeContent(campaign.bodyHtml, studentData);
       const personalizedSubject = personalizeContent(campaign.subject, studentData);
 
-      // Attempt sending via Nodemailer / SMTP transporter
+      // Attempt sending via Gateway Nodemailer transporter
       const result = await sendSingleEmail(transporter, {
         to: log.recipientEmail,
         subject: personalizedSubject,
-        html: personalizedHtml
+        html: personalizedHtml,
+        fromName: gateway?.fromName,
+        fromEmail: gateway?.fromEmail
       });
 
       if (result.success && result.messageId) {
@@ -158,7 +240,10 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
         log.sentAt = new Date();
         log.errorMessage = '';
         log.failureReason = '';
+        log.gatewayId = gateway?._id || null;
+        log.gatewayName = gateway?.gatewayName || '';
         sent++;
+        remainingCapacity--; // Decrement remaining capacity for this gateway
 
         if (isMongo) {
           await EmailLog.findByIdAndUpdate(log._id, {
@@ -170,8 +255,17 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
             rejected: false,
             sentAt: log.sentAt,
             errorMessage: '',
-            failureReason: ''
+            failureReason: '',
+            gatewayId: gateway?._id || null,
+            gatewayName: gateway?.gatewayName || ''
           });
+
+          // Update Gateway last successful send timestamp
+          if (gateway) {
+            await SmtpGateway.findByIdAndUpdate(gateway._id, { lastSuccessfulSend: new Date() });
+          }
+        } else {
+          if (gateway) gateway.lastSuccessfulSend = new Date();
         }
       } else {
         const failureErr = result.error || (result.success ? 'No Message ID returned by SMTP server' : 'SMTP Delivery Failed');
@@ -180,6 +274,8 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
         log.errorMessage = failureErr;
         log.failureReason = failureErr;
         log.retryCount = (log.retryCount || 0) + 1;
+        log.gatewayId = gateway?._id || null;
+        log.gatewayName = gateway?.gatewayName || '';
         failed++;
 
         if (isMongo) {
@@ -188,6 +284,8 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
             deliveryStatus: 'Failed',
             errorMessage: failureErr,
             failureReason: failureErr,
+            gatewayId: gateway?._id || null,
+            gatewayName: gateway?.gatewayName || '',
             $inc: { retryCount: 1 }
           });
         }
@@ -213,7 +311,9 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
         accepted: log.accepted,
         rejected: log.rejected,
         sentAt: log.sentAt,
-        error: log.errorMessage 
+        error: log.errorMessage,
+        gatewayId: gateway?._id,
+        gatewayName: gateway?.gatewayName
       });
 
       emitCampaignProgress(cid, {
@@ -224,15 +324,18 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
         totalRecipients: campaign.totalRecipients,
         progressPct,
         currentRecipient: log.recipientEmail,
-        status: 'Sending'
+        status: 'Sending',
+        gatewayId: gateway?._id,
+        gatewayName: gateway?.gatewayName
       });
     }
 
     // Determine final campaign state
+    const pendingRemaining = campaign.totalRecipients - (sent + failed);
     const finalStatus = (sent === 0 && failed > 0) ? 'Failed' : 'Completed';
     campaign.status = finalStatus;
     campaign.completedAt = new Date();
-    campaign.pendingCount = 0;
+    campaign.pendingCount = Math.max(0, pendingRemaining);
     
     if (isMongo) {
       await campaign.save();
@@ -242,10 +345,12 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
       campaignId: cid,
       sentCount: campaign.sentCount,
       failedCount: campaign.failedCount,
-      pendingCount: 0,
+      pendingCount: campaign.pendingCount,
       totalRecipients: campaign.totalRecipients,
-      progressPct: 100,
-      status: finalStatus
+      progressPct: Math.round(((sent + failed) / campaign.totalRecipients) * 100),
+      status: finalStatus,
+      gatewayId: gateway?._id,
+      gatewayName: gateway?.gatewayName
     });
 
   } catch (error) {
@@ -286,4 +391,4 @@ const recoverInterruptedQueue = async () => {
   }
 };
 
-module.exports = { processCampaignQueue, personalizeContent, recoverInterruptedQueue };
+module.exports = { processCampaignQueue, personalizeContent, recoverInterruptedQueue, getGatewayDailyUsage };

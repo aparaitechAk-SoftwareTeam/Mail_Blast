@@ -1,93 +1,204 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from '../components/common/Navbar';
 import { useToast } from '../context/ToastContext';
-import { Server, Shield, Mail, CheckCircle2, Cpu, Database, Activity, RefreshCw, Send, AlertTriangle } from 'lucide-react';
+import { 
+  Server, 
+  Shield, 
+  Mail, 
+  CheckCircle2, 
+  Activity, 
+  RefreshCw, 
+  Send, 
+  AlertTriangle, 
+  Plus, 
+  Edit3, 
+  Trash2, 
+  Power, 
+  Lock, 
+  Layers,
+  Zap,
+  Globe,
+  User,
+  Clock,
+  Eye,
+  EyeOff
+} from 'lucide-react';
 import Button from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
+import { Input, Select } from '../components/ui/Input';
+import Modal from '../components/ui/Modal';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 import api from '../services/api';
+import { 
+  fetchSmtpGateways, 
+  createSmtpGateway, 
+  updateSmtpGateway, 
+  deleteSmtpGateway, 
+  testSmtpGatewayConnection 
+} from '../services/campaignService';
+import { formatDate } from '../utils/formatters';
 
 const Settings = () => {
   const toast = useToast();
-  const [smtpConfig, setSmtpConfig] = useState({
+  const [loading, setLoading] = useState(true);
+
+  // Gateway Pool State
+  const [gatewaysData, setGatewaysData] = useState({ totalCount: 0, maxAllowed: 3, canAddMore: true, gateways: [] });
+  const [testingGatewayId, setTestingGatewayId] = useState(null);
+
+  // Modal State
+  const [showGatewayModal, setShowGatewayModal] = useState(false);
+  const [editingGateway, setEditingGateway] = useState(null);
+  const [savingGateway, setSavingGateway] = useState(false);
+  const [gatewayForm, setGatewayForm] = useState({
+    gatewayName: '',
     provider: 'Brevo SMTP Relay',
-    host: 'smtp-relay.brevo.com',
-    port: 587,
-    securityLabel: 'STARTTLS',
+    smtpHost: 'smtp-relay.brevo.com',
+    smtpPort: 587,
+    smtpSecure: false,
+    smtpUser: '',
+    smtpPass: '',
     fromName: 'Aparaitech Software',
-    fromEmail: '',
-    batchSize: 5,
-    delayMs: 200,
-    connectionStatus: 'Connected',
-    domainStatus: 'Checking...'
+    fromEmail: 'krushnarathod.aparaitech@gmail.com',
+    dailyQuota: 300
   });
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [testingConnection, setTestingConnection] = useState(false);
-  const [connectionTestResult, setConnectionTestResult] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
 
-  // Send test email modal / form state
+  // Delete Confirm State
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null, name: '' });
+  const [deleting, setDeleting] = useState(false);
+
+  // Send test email state
+  const [selectedTestGatewayId, setSelectedTestGatewayId] = useState('');
   const [testRecipient, setTestRecipient] = useState('nileshrajpure037@gmail.com');
   const [sendingTest, setSendingTest] = useState(false);
   const [testDiagnosticResult, setTestDiagnosticResult] = useState(null);
 
   useEffect(() => {
-    document.title = 'Aparaitech | Settings';
-    loadSettings();
+    document.title = 'Aparaitech | System & Gateway Settings';
+    loadGateways();
+
+    const interval = setInterval(() => {
+      loadGateways();
+    }, 30000);
+
+    return () => clearInterval(interval);
   }, []);
 
-  const loadSettings = async () => {
+  const loadGateways = async () => {
     try {
-      const res = await api.get('/settings/smtp');
-      setSmtpConfig(res.data);
+      const data = await fetchSmtpGateways();
+      setGatewaysData(data);
+      if (data.gateways && data.gateways.length > 0 && !selectedTestGatewayId) {
+        setSelectedTestGatewayId(data.gateways[0]._id);
+      }
     } catch (err) {
-      console.error('Error loading SMTP settings:', err);
-      toast.error('Failed to load active SMTP configuration');
+      console.error('Error loading SMTP gateways:', err);
+      toast.error('Failed to load SMTP gateway pool');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSave = async (e) => {
+  const handleOpenAddModal = () => {
+    setEditingGateway(null);
+    setGatewayForm({
+      gatewayName: `Brevo Gateway 0${(gatewaysData?.gateways?.length || 0) + 1}`,
+      provider: 'Brevo SMTP Relay',
+      smtpHost: 'smtp-relay.brevo.com',
+      smtpPort: 587,
+      smtpSecure: false,
+      smtpUser: '',
+      smtpPass: '',
+      fromName: 'Aparaitech Software',
+      fromEmail: 'nileshrajpure5888@gmail.com',
+      dailyQuota: 300
+    });
+    setShowGatewayModal(true);
+  };
+
+  const handleOpenEditModal = (gw) => {
+    setEditingGateway(gw);
+    setGatewayForm({
+      gatewayName: gw.gatewayName || '',
+      provider: gw.provider || 'Brevo SMTP Relay',
+      smtpHost: gw.smtpHost || 'smtp-relay.brevo.com',
+      smtpPort: gw.smtpPort || 587,
+      smtpSecure: !!gw.smtpSecure,
+      smtpUser: gw.smtpUser || '',
+      smtpPass: '••••••••',
+      fromName: gw.fromName || 'Aparaitech Software',
+      fromEmail: gw.fromEmail || '',
+      dailyQuota: gw.dailyQuota || 300
+    });
+    setShowGatewayModal(true);
+  };
+
+  const handleSaveGateway = async (e) => {
     e.preventDefault();
-    setSaving(true);
+    if (!gatewayForm.gatewayName || !gatewayForm.fromEmail) {
+      toast.error('Gateway name and sender email address are required');
+      return;
+    }
+
+    setSavingGateway(true);
     try {
-      const res = await api.post('/settings/smtp', {
-        host: smtpConfig.host,
-        port: smtpConfig.port,
-        fromName: smtpConfig.fromName,
-        fromEmail: smtpConfig.fromEmail,
-        batchSize: smtpConfig.batchSize,
-        delayMs: smtpConfig.delayMs
-      });
-      toast.success(res.data.message || 'SMTP settings updated successfully!');
-      loadSettings();
+      if (editingGateway) {
+        await updateSmtpGateway(editingGateway._id, gatewayForm);
+        toast.success(`SMTP Gateway "${gatewayForm.gatewayName}" updated successfully!`);
+      } else {
+        await createSmtpGateway(gatewayForm);
+        toast.success(`SMTP Gateway "${gatewayForm.gatewayName}" created successfully!`);
+      }
+      setShowGatewayModal(false);
+      loadGateways();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Error updating settings');
+      toast.error(err.response?.data?.message || 'Failed to save gateway configuration');
     } finally {
-      setSaving(false);
+      setSavingGateway(false);
     }
   };
 
-  const handleTestConnection = async () => {
-    setTestingConnection(true);
-    setConnectionTestResult(null);
+  const handleToggleGatewayStatus = async (gw) => {
     try {
-      const res = await api.post('/settings/smtp/test');
-      setConnectionTestResult(res.data);
-      if (res.data.success) {
-        toast.success('SMTP Transport connected successfully!');
-      } else {
-        toast.error(res.data.message || 'SMTP connection failed');
-      }
+      const updatedStatus = !gw.isActive;
+      await updateSmtpGateway(gw._id, { isActive: updatedStatus });
+      toast.success(`Gateway "${gw.gatewayName}" ${updatedStatus ? 'enabled' : 'disabled'}`);
+      loadGateways();
     } catch (err) {
-      setConnectionTestResult({
-        success: false,
-        message: err.response?.data?.message || 'SMTP connection handshake failed'
-      });
-      toast.error('SMTP connection handshake failed');
+      toast.error('Failed to toggle gateway status');
+    }
+  };
+
+  const handleDeleteGateway = async () => {
+    if (!deleteConfirm.id) return;
+    setDeletingGateway(true);
+    try {
+      await deleteSmtpGateway(deleteConfirm.id);
+      toast.success(`SMTP Gateway "${deleteConfirm.name}" deleted`);
+      setDeleteConfirm({ isOpen: false, id: null, name: '' });
+      loadGateways();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete SMTP gateway');
     } finally {
-      setTestingConnection(false);
+      setDeletingGateway(false);
+    }
+  };
+
+  const handleTestGatewayConnection = async (gwId) => {
+    setTestingGatewayId(gwId);
+    try {
+      const res = await testSmtpGatewayConnection(gwId);
+      if (res.success) {
+        toast.success(res.message || 'SMTP Gateway connected successfully!');
+      } else {
+        toast.error(res.message || 'Gateway connection test failed');
+      }
+      loadGateways();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Connection test failed');
+    } finally {
+      setTestingGatewayId(null);
     }
   };
 
@@ -101,9 +212,13 @@ const Settings = () => {
     setTestDiagnosticResult(null);
 
     try {
-      const res = await api.post('/settings/smtp/send-test', { targetEmail: testRecipient });
+      const res = await api.post('/settings/smtp/send-test', {
+        targetEmail: testRecipient,
+        gatewayId: selectedTestGatewayId || null
+      });
       setTestDiagnosticResult(res.data);
-      toast.success('SMTP accepted test email!');
+      toast.success('SMTP accepted the test email!');
+      loadGateways();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to send test email');
     } finally {
@@ -117,282 +232,458 @@ const Settings = () => {
         <Navbar title="System & Delivery Settings" />
         <div className="page-container text-center py-5">
           <div className="spinner-border text-primary" role="status" />
-          <p className="mt-2 text-muted">Loading real SMTP configuration from backend...</p>
+          <p className="mt-2 text-muted">Loading SMTP Gateway pool from backend...</p>
         </div>
       </div>
     );
   }
+
+  const { gateways = [] } = gatewaysData;
 
   return (
     <div>
       <Navbar title="System & Delivery Settings" />
 
       <div className="page-container">
-        <div className="row g-4">
-          {/* Main SMTP Form & Diagnostic Tools */}
-          <div className="col-12 col-lg-8">
-            {/* Active Gateway Card */}
-            <div className="card border-0 shadow-sm rounded-4 bg-surface p-4 mb-4">
-              {/* Header with Provider Badge */}
-              <div className="d-flex align-items-center justify-content-between pb-3 border-bottom flex-wrap gap-2 mb-3">
-                <div className="d-flex align-items-center gap-2.5">
-                  <div className="p-2.5 rounded-3 bg-primary-subtle text-primary">
-                    <Server size={20} />
-                  </div>
-                  <div>
-                    <h5 className="fw-bold text-dark m-0">SMTP / Mail Transporter Setup</h5>
-                    <p className="text-muted small m-0 mt-0.5">Outbound recruitment email gateway parameters</p>
-                  </div>
-                </div>
-
-                <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1 rounded-pill fs-9">
-                  Brevo Production Relay
-                </span>
-              </div>
-
-              {/* Dedicated Action Area: Test Connection */}
-              <div className="p-3 bg-light rounded-3 mb-4 d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-3">
-                <div className="d-flex align-items-center gap-2">
-                  <Activity size={16} className="text-primary flex-shrink-0" />
-                  <span className="text-muted fs-8">Verify active SMTP relay connection before dispatching email blasts.</span>
-                </div>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  icon={RefreshCw}
-                  onClick={handleTestConnection}
-                  loading={testingConnection ? 'Testing...' : false}
-                  className="flex-shrink-0"
-                >
-                  Test Connection
-                </Button>
-              </div>
-
-              {connectionTestResult && (
-                <div className={`alert border-0 rounded-3 mb-4 p-3 d-flex align-items-center gap-2 fs-8 ${connectionTestResult.success ? 'alert-success' : 'alert-danger'}`}>
-                  {connectionTestResult.success ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
-                  <span>{connectionTestResult.message}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleSave}>
-                <div className="row g-3">
-                  <div className="col-12 col-md-8">
-                    <Input
-                      label="SMTP Host Server"
-                      name="host"
-                      value={smtpConfig.host}
-                      onChange={(e) => setSmtpConfig({ ...smtpConfig, host: e.target.value })}
-                      placeholder="smtp-relay.brevo.com"
-                      required
-                    />
-                  </div>
-                  <div className="col-12 col-md-4">
-                    <Input
-                      label="Port"
-                      name="port"
-                      value={smtpConfig.port}
-                      onChange={(e) => setSmtpConfig({ ...smtpConfig, port: e.target.value })}
-                      placeholder="587"
-                      required
-                    />
-                  </div>
-                  <div className="col-12 col-md-6">
-                    <Input
-                      label="Sender Display Name"
-                      name="fromName"
-                      value={smtpConfig.fromName}
-                      onChange={(e) => setSmtpConfig({ ...smtpConfig, fromName: e.target.value })}
-                      placeholder="Aparaitech Software"
-                      required
-                    />
-                  </div>
-                  <div className="col-12 col-md-6">
-                    <Input
-                      label="Sender Email Address"
-                      name="fromEmail"
-                      type="email"
-                      value={smtpConfig.fromEmail}
-                      onChange={(e) => setSmtpConfig({ ...smtpConfig, fromEmail: e.target.value })}
-                      placeholder="krushnarathod.aparaitech@gmail.com"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <h6 className="fw-bold text-dark mt-4 mb-3 pt-3 border-top">Queue & Rate Limiting Controls</h6>
-
-                <div className="row g-3 mb-4">
-                  <div className="col-12 col-md-6">
-                    <Input
-                      label="Batch Size (Emails / Cycle)"
-                      name="batchSize"
-                      type="number"
-                      value={smtpConfig.batchSize}
-                      onChange={(e) => setSmtpConfig({ ...smtpConfig, batchSize: e.target.value })}
-                    />
-                  </div>
-                  <div className="col-12 col-md-6">
-                    <Input
-                      label="Delay Between Emails (ms)"
-                      name="delayMs"
-                      type="number"
-                      value={smtpConfig.delayMs}
-                      onChange={(e) => setSmtpConfig({ ...smtpConfig, delayMs: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                <Button type="submit" variant="primary" loading={saving ? 'Saving Config...' : false}>
-                  Save Configuration
-                </Button>
-              </form>
+        {/* 1. Header & Gateway Pool Counter */}
+        <div className="d-flex align-items-sm-center justify-content-between mb-4 flex-column flex-sm-row gap-3">
+          <div>
+            <div className="text-uppercase text-primary fw-bold tracking-wider fs-8 mb-1" style={{ letterSpacing: '0.08em' }}>
+              SMTP INFRASTRUCTURE
             </div>
-
-            {/* Send Real Test Email Diagnostic Card */}
-            <div className="card border-0 shadow-sm rounded-4 bg-surface p-4">
-              <div className="d-flex align-items-center justify-content-between mb-3 pb-3 border-bottom flex-wrap gap-2">
-                <div className="d-flex align-items-center gap-2.5">
-                  <div className="p-2.5 rounded-3 bg-primary-subtle text-primary">
-                    <Mail size={20} />
-                  </div>
-                  <div>
-                    <div className="d-flex align-items-center gap-2 flex-wrap">
-                      <h5 className="fw-bold text-dark m-0">Send Test Email Diagnostic</h5>
-                      <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-0.5 rounded-pill fs-9">
-                        Verify SMTP Delivery
-                      </span>
-                    </div>
-                    <p className="text-muted small m-0 mt-0.5">
-                      Dispatch a minimal test email through the active Brevo transporter to verify real SMTP relay delivery.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <form onSubmit={handleSendTestEmail} className="mb-3">
-                <div className="d-flex flex-column flex-sm-row align-items-stretch align-items-sm-end gap-3">
-                  <div className="flex-grow-1">
-                    <Input
-                      label="Test Recipient Mailbox"
-                      name="testRecipient"
-                      type="email"
-                      value={testRecipient}
-                      onChange={(e) => setTestRecipient(e.target.value)}
-                      placeholder="nileshrajpure037@gmail.com"
-                      className="m-0"
-                      required
-                    />
-                  </div>
-                  <div className="flex-shrink-0">
-                    <Button 
-                      type="submit" 
-                      variant="primary" 
-                      icon={Send} 
-                      className="w-100 py-2.5 px-4 rounded-3" 
-                      style={{ minWidth: '170px' }}
-                      loading={sendingTest ? 'Sending...' : false}
-                    >
-                      Send Test Email
-                    </Button>
-                  </div>
-                </div>
-              </form>
-
-              {testDiagnosticResult && (
-                <div className="p-3.5 bg-success-subtle border border-success-subtle rounded-3 text-dark fs-8">
-                  <div className="d-flex align-items-center gap-1.5 text-success fw-bold mb-2.5">
-                    <CheckCircle2 size={16} />
-                    <span>SMTP Accepted the Test Email</span>
-                  </div>
-                  <div className="row g-2 mb-2.5">
-                    <div className="col-12 col-sm-6">
-                      <span className="text-muted d-block fs-9">Recipient:</span>
-                      <span className="fw-semibold text-break">{testDiagnosticResult.recipient}</span>
-                    </div>
-                    <div className="col-12 col-sm-6">
-                      <span className="text-muted d-block fs-9">Sender:</span>
-                      <span className="fw-semibold text-break">{testDiagnosticResult.sender}</span>
-                    </div>
-                    <div className="col-12">
-                      <span className="text-muted d-block fs-9">Message ID:</span>
-                      <code className="text-dark bg-white px-2 py-1 rounded border d-block text-break fs-9">{testDiagnosticResult.messageId}</code>
-                    </div>
-                    <div className="col-12">
-                      <span className="text-muted d-block fs-9">SMTP Server Response:</span>
-                      <code className="text-muted bg-white px-2 py-1 rounded border d-block text-break fs-9">{testDiagnosticResult.smtpResponse}</code>
-                    </div>
-                  </div>
-                  <div className="p-2.5 bg-white rounded-3 border text-muted fs-9">
-                    <strong>Important:</strong> SMTP accepted the email. Final inbox placement depends on recipient mail provider filters.
-                  </div>
-                </div>
-              )}
-            </div>
+            <h4 className="fw-bold text-dark m-0">SMTP Gateway Pool</h4>
+            <p className="text-muted small m-0 mt-0.5">Manage authorized Brevo SMTP delivery gateways and monitor daily capacity.</p>
           </div>
 
-          {/* Right Sidebar: Active Gateway Status */}
-          <div className="col-12 col-lg-4">
-            <div className="card border-0 shadow-sm rounded-4 bg-surface p-4">
-              <div className="d-flex align-items-center gap-2 mb-3">
-                <Shield size={20} className="text-primary" />
-                <h6 className="fw-bold text-dark m-0">Active Gateway Overview</h6>
-              </div>
-              <p className="text-muted small mb-4">
-                Real-time active SMTP transporter and cluster status parameters.
-              </p>
-
-              <div className="space-y-3 small">
-                <div className="p-3 bg-light rounded-3 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
-                  <span className="text-muted">SMTP Provider:</span>
-                  <span className="fw-semibold text-dark text-break">{smtpConfig.provider || 'Brevo SMTP Relay'}</span>
-                </div>
-
-                <div className="p-3 bg-light rounded-3 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
-                  <span className="text-muted">Host Server:</span>
-                  <code className="text-dark bg-white px-1.5 py-0.5 rounded border fs-9 text-break">{smtpConfig.host}</code>
-                </div>
-
-                <div className="p-3 bg-light rounded-3 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
-                  <span className="text-muted">Port & Protocol:</span>
-                  <span className="badge bg-primary-subtle text-primary fw-bold text-wrap">{smtpConfig.port} ({smtpConfig.securityLabel || 'STARTTLS'})</span>
-                </div>
-
-                <div className="p-3 bg-light rounded-3 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
-                  <span className="text-muted">Sender Display:</span>
-                  <span className="fw-semibold text-dark text-break">{smtpConfig.fromName}</span>
-                </div>
-
-                <div className="p-3 bg-light rounded-3 mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
-                  <span className="text-muted">Sender Email:</span>
-                  <code className="text-dark bg-white px-1.5 py-0.5 rounded border fs-9 text-break" style={{ wordBreak: 'break-all' }}>{smtpConfig.fromEmail}</code>
-                </div>
-
-                <div className="p-3 bg-light rounded-3 mb-2 d-flex flex-column flex-sm-row align-items-start align-items-sm-center justify-content-between gap-2">
-                  <span className="text-muted flex-shrink-0">Domain Auth Status:</span>
-                  <span 
-                    className={`badge px-2.5 py-1.5 rounded-2 text-wrap text-start ${smtpConfig.isCustomDomainAuthenticated ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-warning-subtle text-warning-emphasis border border-warning-subtle'}`}
-                    style={{ whiteSpace: 'normal', lineHeight: '1.45', maxWidth: '100%', wordBreak: 'break-word' }}
-                  >
-                    {smtpConfig.domainStatus || 'Checking...'}
-                  </span>
-                </div>
-
-                <div className="p-3 bg-light rounded-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
-                  <div className="d-flex align-items-center gap-2">
-                    <Activity size={16} className="text-success" />
-                    <span className="fw-semibold text-dark">Connection Status</span>
-                  </div>
-                  <span className="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1 rounded-pill">
-                    Connected
-                  </span>
-                </div>
-              </div>
-            </div>
+          <div className="d-flex align-items-center gap-2">
+            <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 rounded-pill fs-8 fw-bold">
+              {gateways.length} / 3 SMTP Gateways
+            </span>
+            {gateways.length < 3 && (
+              <Button 
+                variant="primary" 
+                icon={Plus} 
+                onClick={handleOpenAddModal}
+                style={{ borderRadius: '10px', height: '40px' }}
+                aria-label="Add Gateway"
+              >
+                Add Gateway
+              </Button>
+            )}
           </div>
         </div>
+
+        {/* 2. SMTP Gateway Cards Grid */}
+        <div className="row g-4 mb-4">
+          {gateways.map((gw, idx) => {
+            const hasUsageData = typeof gw.dailyUsage === 'number' && typeof gw.dailyQuota === 'number' && typeof gw.remainingCapacity === 'number';
+            const usagePct = hasUsageData 
+              ? (typeof gw.usagePercentage === 'number' ? gw.usagePercentage : Math.min(100, Math.round((gw.dailyUsage / gw.dailyQuota) * 100))) 
+              : 0;
+
+            const isTesting = testingGatewayId === gw._id;
+            const statusClass = 
+              gw.connectionStatus === 'Connected' ? 'bg-success-subtle text-success border-success-subtle' :
+              gw.connectionStatus === 'Quota Reached' ? 'bg-warning-subtle text-warning-emphasis border-warning-subtle' :
+              gw.connectionStatus === 'Inactive' ? 'bg-secondary-subtle text-secondary border-secondary-subtle' :
+              'bg-danger-subtle text-danger border-danger-subtle';
+
+            return (
+              <div key={gw._id} className="col-12 col-md-6 col-xl-4">
+                <div className="card border shadow-sm rounded-4 bg-surface h-100 p-4 d-flex flex-column" style={{ borderRadius: '16px', borderColor: 'var(--border, #E2E8F0)' }}>
+                  {/* Premium Gateway Header */}
+                  <div className="d-flex align-items-start justify-content-between mb-3 pb-3 border-bottom gap-2">
+                    <div className="d-flex align-items-center gap-2.5">
+                      <div className="p-2.5 rounded-3 bg-primary-subtle text-primary flex-shrink-0" style={{ width: '42px', height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Server size={20} />
+                      </div>
+                      <div>
+                        <h6 className="fw-bold text-dark m-0 fs-6">{gw.gatewayName}</h6>
+                        <span className="text-muted fs-8 d-block">{gw.provider || 'Brevo SMTP Relay'}</span>
+                      </div>
+                    </div>
+
+                    <span className={`badge px-2.5 py-1 rounded-pill fs-9 fw-semibold border ${statusClass} flex-shrink-0`}>
+                      ● {gw.connectionStatus || 'Connected'}
+                    </span>
+                  </div>
+
+                  {/* Gateway Information Section with Lucide Icons (NO TRUNCATION) */}
+                  <div className="d-flex flex-column gap-2 mb-3.5 fs-8">
+                    <div className="d-flex align-items-center justify-content-between p-2.5 bg-light rounded-3 gap-2">
+                      <div className="d-flex align-items-center gap-2 flex-shrink-0 text-muted">
+                        <Globe size={14} className="text-primary" />
+                        <span>Host Server</span>
+                      </div>
+                      <code className="text-dark bg-white px-2 py-1 rounded border fs-9 text-end" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                        {gw.smtpHost}:{gw.smtpPort}
+                      </code>
+                    </div>
+
+                    <div className="d-flex align-items-center justify-content-between p-2.5 bg-light rounded-3 gap-2">
+                      <div className="d-flex align-items-center gap-2 flex-shrink-0 text-muted">
+                        <User size={14} className="text-primary" />
+                        <span>Sender Name</span>
+                      </div>
+                      <span className="fw-semibold text-dark fs-8 text-end" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                        {gw.fromName}
+                      </span>
+                    </div>
+
+                    <div className="d-flex align-items-center justify-content-between p-2.5 bg-light rounded-3 gap-2">
+                      <div className="d-flex align-items-center gap-2 flex-shrink-0 text-muted">
+                        <Mail size={14} className="text-primary" />
+                        <span>Sender Email</span>
+                      </div>
+                      <code className="text-dark bg-white px-2 py-1 rounded border fs-9 text-end" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                        {gw.fromEmail}
+                      </code>
+                    </div>
+                  </div>
+
+                  {/* Today's Usage Breakdown (Soft-Highlight Enterprise Panel) */}
+                  <div className="p-3.5 rounded-4 border mb-3" style={{ backgroundColor: 'var(--surface-subtle, #F8FAFC)', borderColor: 'var(--border, #E2E8F0)' }}>
+                    <div className="d-flex align-items-center justify-content-between mb-2">
+                      <span className="text-muted fs-8 fw-bold text-uppercase" style={{ letterSpacing: '0.05em' }}>Today's Usage</span>
+                      <span className="fw-bold text-dark fs-7">
+                        {hasUsageData ? (
+                          <>
+                            <span className="fs-6 text-primary">{gw.dailyUsage}</span> / {gw.dailyQuota} <span className="fs-9 text-muted font-normal">emails</span>
+                          </>
+                        ) : 'Usage unavailable'}
+                      </span>
+                    </div>
+
+                    <div className="progress mb-2" style={{ height: '8px', borderRadius: '4px', backgroundColor: '#E2E8F0' }}>
+                      <div 
+                        className={`progress-bar ${usagePct >= 90 ? 'bg-danger' : usagePct >= 75 ? 'bg-warning' : 'bg-primary'}`} 
+                        role="progressbar" 
+                        style={{ width: `${usagePct}%` }}
+                      />
+                    </div>
+
+                    <div className="d-flex align-items-center justify-content-between text-muted fs-9 mb-2.5">
+                      <span className="text-muted">Usage Progress</span>
+                      <span className="fw-bold text-dark">{hasUsageData ? `${usagePct}% used` : 'N/A'}</span>
+                    </div>
+
+                    <div className="pt-2.5 border-top row text-center g-2 align-items-center">
+                      <div className="col-4">
+                        <span className="text-muted fs-9 d-block mb-0.5">Remaining</span>
+                        <span className="fw-bold text-dark fs-8 d-block">{hasUsageData ? `${gw.remainingCapacity}` : 'N/A'}</span>
+                        <span className="text-muted fs-9" style={{ fontSize: '0.7rem' }}>emails</span>
+                      </div>
+                      <div className="col-4 border-start border-end">
+                        <span className="text-muted fs-9 d-block mb-0.5">Used</span>
+                        <span className="fw-bold text-primary fs-8 d-block">{hasUsageData ? `${gw.dailyUsage}` : 'N/A'}</span>
+                        <span className="text-muted fs-9" style={{ fontSize: '0.7rem' }}>emails</span>
+                      </div>
+                      <div className="col-4">
+                        <span className="text-muted fs-9 d-block mb-0.5">Daily Quota</span>
+                        <span className="fw-bold text-dark fs-8 d-block">{hasUsageData ? `${gw.dailyQuota}` : 'N/A'}</span>
+                        <span className="text-muted fs-9" style={{ fontSize: '0.7rem' }}>emails</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Activity Section */}
+                  <div className="d-flex align-items-center justify-content-between text-muted fs-9 mb-3.5 px-1 flex-wrap gap-2">
+                    <div className="d-flex align-items-center gap-1.5">
+                      <Send size={13} className="text-primary flex-shrink-0" />
+                      <span>Last Send: <strong className="text-dark ms-0.5">{gw.lastSuccessfulSend ? formatDate(gw.lastSuccessfulSend) : 'Never'}</strong></span>
+                    </div>
+                    <div className="d-flex align-items-center gap-1.5">
+                      <Clock size={13} className="text-muted flex-shrink-0" />
+                      <span>Last Test: <strong className="text-dark ms-0.5">{gw.lastConnectionTest ? formatDate(gw.lastConnectionTest) : 'Never'}</strong></span>
+                    </div>
+                  </div>
+
+                  {/* Action Footer Toolbar */}
+                  <div className="mt-auto pt-3 border-top d-flex align-items-center justify-content-between gap-2">
+                    <Button
+                      variant="outline-custom"
+                      size="sm"
+                      icon={RefreshCw}
+                      onClick={() => handleTestGatewayConnection(gw._id)}
+                      loading={isTesting ? 'Testing...' : false}
+                      className="flex-grow-1"
+                      style={{ borderRadius: '8px', height: '38px', fontSize: '0.85rem' }}
+                    >
+                      Test Connection
+                    </Button>
+
+                    <div className="d-flex align-items-center gap-1.5 flex-shrink-0">
+                      <button
+                        onClick={() => handleOpenEditModal(gw)}
+                        className="btn btn-sm btn-outline-secondary p-0 d-inline-flex align-items-center justify-content-center"
+                        title="Edit Gateway Settings"
+                        aria-label={`Edit ${gw.gatewayName}`}
+                        style={{ width: '38px', height: '38px', borderRadius: '8px' }}
+                      >
+                        <Edit3 size={16} />
+                      </button>
+
+                      <button
+                        onClick={() => handleToggleGatewayStatus(gw)}
+                        className={`btn btn-sm ${gw.isActive ? 'btn-outline-success' : 'btn-outline-secondary'} p-0 d-inline-flex align-items-center justify-content-center`}
+                        title={gw.isActive ? 'Disable Gateway' : 'Enable Gateway'}
+                        aria-label={`${gw.isActive ? 'Disable' : 'Enable'} ${gw.gatewayName}`}
+                        style={{ width: '38px', height: '38px', borderRadius: '8px' }}
+                      >
+                        <Power size={16} />
+                      </button>
+
+                      {gateways.length > 1 && (
+                        <button
+                          onClick={() => setDeleteConfirm({ isOpen: true, id: gw._id, name: gw.gatewayName })}
+                          className="btn btn-sm btn-outline-danger p-0 d-inline-flex align-items-center justify-content-center"
+                          title="Delete Gateway"
+                          aria-label={`Delete ${gw.gatewayName}`}
+                          style={{ width: '38px', height: '38px', borderRadius: '8px' }}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 3. Send Test Email Diagnostic with Gateway Selector */}
+        <div className="card border-0 shadow-sm rounded-4 bg-surface p-4">
+          <div className="d-flex align-items-center justify-content-between mb-3 pb-3 border-bottom flex-wrap gap-2">
+            <div className="d-flex align-items-center gap-2.5">
+              <div className="p-2.5 rounded-3 bg-primary-subtle text-primary" style={{ width: '42px', height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Mail size={20} />
+              </div>
+              <div>
+                <h5 className="fw-bold text-dark m-0">Send Test Email Diagnostic</h5>
+                <p className="text-muted small m-0 mt-0.5">
+                  Dispatch a real test email through any authorized SMTP Gateway to verify deliverability.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={handleSendTestEmail} className="mb-3">
+            <div className="row g-3 align-items-end">
+              <div className="col-12 col-md-5">
+                <Select
+                  label="SMTP Gateway"
+                  name="selectedTestGatewayId"
+                  value={selectedTestGatewayId}
+                  onChange={(e) => setSelectedTestGatewayId(e.target.value)}
+                  options={gateways.map(g => ({
+                    value: g._id,
+                    label: `${g.gatewayName} (${g.remainingCapacity} / ${g.dailyQuota} remaining)`
+                  }))}
+                />
+              </div>
+
+              <div className="col-12 col-md-5">
+                <Input
+                  label="Test Recipient Mailbox"
+                  name="testRecipient"
+                  type="email"
+                  value={testRecipient}
+                  onChange={(e) => setTestRecipient(e.target.value)}
+                  placeholder="nileshrajpure037@gmail.com"
+                  className="m-0"
+                  required
+                />
+              </div>
+
+              <div className="col-12 col-md-2">
+                <Button 
+                  type="submit" 
+                  variant="primary" 
+                  icon={Send} 
+                  className="w-100 py-2.5 rounded-3" 
+                  style={{ height: '42px' }}
+                  loading={sendingTest ? 'Sending...' : false}
+                >
+                  Send Test
+                </Button>
+              </div>
+            </div>
+          </form>
+
+          {testDiagnosticResult && (
+            <div className="p-3.5 bg-success-subtle border border-success-subtle rounded-3 text-dark fs-8 mt-3">
+              <div className="d-flex align-items-center gap-1.5 text-success fw-bold mb-2.5">
+                <CheckCircle2 size={16} />
+                <span>SMTP Accepted the Test Email via {testDiagnosticResult.gatewayName || 'Selected Gateway'}</span>
+              </div>
+              <div className="row g-2 mb-2.5">
+                <div className="col-12 col-sm-6">
+                  <span className="text-muted d-block fs-9">Gateway:</span>
+                  <span className="fw-semibold text-dark">{testDiagnosticResult.gatewayName || 'Primary Gateway'}</span>
+                </div>
+                <div className="col-12 col-sm-6">
+                  <span className="text-muted d-block fs-9">Recipient:</span>
+                  <span className="fw-semibold text-break">{testDiagnosticResult.recipient}</span>
+                </div>
+                <div className="col-12 col-sm-6">
+                  <span className="text-muted d-block fs-9">Sender:</span>
+                  <span className="fw-semibold text-break">{testDiagnosticResult.sender}</span>
+                </div>
+                <div className="col-12 col-sm-6">
+                  <span className="text-muted d-block fs-9">Accepted:</span>
+                  <span className="fw-semibold text-success">{testDiagnosticResult.accepted ? 'Yes' : 'No'}</span>
+                </div>
+                <div className="col-12">
+                  <span className="text-muted d-block fs-9">Message ID:</span>
+                  <code className="text-dark bg-white px-2 py-1 rounded border d-block text-break fs-9">{testDiagnosticResult.messageId}</code>
+                </div>
+                <div className="col-12">
+                  <span className="text-muted d-block fs-9">SMTP Server Response:</span>
+                  <code className="text-muted bg-white px-2 py-1 rounded border d-block text-break fs-9">{testDiagnosticResult.smtpResponse}</code>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 4. Add / Edit Gateway Modal */}
+        <Modal
+          isOpen={showGatewayModal}
+          onClose={() => setShowGatewayModal(false)}
+          title={editingGateway ? "Edit SMTP Gateway" : "Add SMTP Gateway"}
+          subtitle="Configure outbound SMTP credentials and daily sending quota."
+          size="md"
+          footer={
+            <div className="d-flex align-items-center justify-content-end gap-2 w-100">
+              <Button variant="ghost" onClick={() => setShowGatewayModal(false)} disabled={savingGateway}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={handleSaveGateway} loading={savingGateway}>
+                {editingGateway ? "Save Gateway" : "Create Gateway"}
+              </Button>
+            </div>
+          }
+        >
+          <form onSubmit={handleSaveGateway} className="d-flex flex-column gap-3">
+            <Input
+              label="Gateway Name"
+              name="gatewayName"
+              value={gatewayForm.gatewayName}
+              onChange={(e) => setGatewayForm({ ...gatewayForm, gatewayName: e.target.value })}
+              placeholder="e.g. Brevo Gateway 02"
+              required
+            />
+
+            <div className="row g-3">
+              <div className="col-8">
+                <Input
+                  label="SMTP Host Server"
+                  name="smtpHost"
+                  value={gatewayForm.smtpHost}
+                  onChange={(e) => setGatewayForm({ ...gatewayForm, smtpHost: e.target.value })}
+                  placeholder="smtp-relay.brevo.com"
+                  required
+                />
+              </div>
+              <div className="col-4">
+                <Input
+                  label="Port"
+                  name="smtpPort"
+                  value={gatewayForm.smtpPort}
+                  onChange={(e) => setGatewayForm({ ...gatewayForm, smtpPort: e.target.value })}
+                  placeholder="587"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="row g-3">
+              <div className="col-6">
+                <Input
+                  label="Sender Display Name"
+                  name="fromName"
+                  value={gatewayForm.fromName}
+                  onChange={(e) => setGatewayForm({ ...gatewayForm, fromName: e.target.value })}
+                  placeholder="Aparaitech Software"
+                  required
+                />
+              </div>
+              <div className="col-6">
+                <Input
+                  label="Sender Email Address"
+                  name="fromEmail"
+                  type="email"
+                  value={gatewayForm.fromEmail}
+                  onChange={(e) => setGatewayForm({ ...gatewayForm, fromEmail: e.target.value })}
+                  placeholder="krushnarathod.aparaitech@gmail.com"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="row g-3">
+              <div className="col-6">
+                <Input
+                  label="SMTP Username"
+                  name="smtpUser"
+                  value={gatewayForm.smtpUser}
+                  onChange={(e) => setGatewayForm({ ...gatewayForm, smtpUser: e.target.value })}
+                  placeholder="Brevo login or SMTP user"
+                />
+              </div>
+              <div className="col-6">
+                <label className="form-label fs-8 fw-semibold text-dark mb-1">SMTP Password / Key</label>
+                <div className="input-group">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className="form-control form-control-custom"
+                    name="smtpPass"
+                    value={gatewayForm.smtpPass}
+                    onChange={(e) => setGatewayForm({ ...gatewayForm, smtpPass: e.target.value })}
+                    placeholder={editingGateway ? "•••••••• (Leave blank to keep unchanged)" : "Brevo SMTP Key"}
+                    style={{ height: '42px', borderRadius: '10px 0 0 10px', fontSize: '0.875rem' }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary d-flex align-items-center justify-content-center"
+                    onClick={() => setShowPassword(!showPassword)}
+                    title={showPassword ? "Hide password" : "Show password"}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    style={{ height: '42px', borderRadius: '0 10px 10px 0', width: '42px' }}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                <span className="text-muted fs-9 mt-1 d-block">
+                  {editingGateway ? 'Leave blank to keep existing credential unchanged.' : 'Configured specifically for this gateway.'}
+                </span>
+              </div>
+            </div>
+
+            <Input
+              label="Daily Quota (Emails / Day)"
+              name="dailyQuota"
+              type="number"
+              value={gatewayForm.dailyQuota}
+              onChange={(e) => setGatewayForm({ ...gatewayForm, dailyQuota: e.target.value })}
+              placeholder="300"
+              required
+            />
+          </form>
+        </Modal>
+
+        {/* Delete Confirmation Dialog */}
+        <ConfirmDialog
+          isOpen={deleteConfirm.isOpen}
+          onClose={() => setDeleteConfirm({ isOpen: false, id: null, name: '' })}
+          onConfirm={handleDeleteGateway}
+          title="Delete SMTP Gateway?"
+          description={`Are you sure you want to remove "${deleteConfirm.name}" from the gateway pool? This action cannot be undone.`}
+          confirmText="Delete Gateway"
+          variant="danger"
+          loading={deleting}
+        />
       </div>
     </div>
   );

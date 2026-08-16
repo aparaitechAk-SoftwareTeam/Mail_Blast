@@ -30,4 +30,13 @@ const protect = async (req, res, next) => {
   }
 };
 
-module.exports = { protect };
+const authorize = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user || (roles.length > 0 && !roles.includes(req.user.role))) {
+      return res.status(403).json({ message: `Forbidden: Access requires one of the following roles: ${roles.join(', ')}` });
+    }
+    next();
+  };
+};
+
+module.exports = { protect, authorize };

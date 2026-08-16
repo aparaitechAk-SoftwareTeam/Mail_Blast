@@ -61,9 +61,11 @@ const getCampaignById = async (req, res) => {
   }
 };
 
+const SmtpGateway = require('../models/SmtpGateway');
+
 const createCampaign = async (req, res) => {
   try {
-    const { title, subject, bodyHtml, templateId, targetFilters, scheduledAt, audienceMode = 'filtered' } = req.body;
+    const { title, subject, bodyHtml, templateId, targetFilters, scheduledAt, audienceMode = 'filtered', smtpGatewayId } = req.body;
 
     if (!title || !subject || !bodyHtml) {
       return res.status(400).json({ message: 'Campaign title, subject, and email body are required' });
@@ -124,6 +126,23 @@ const createCampaign = async (req, res) => {
       targetStudents = stList;
     }
 
+    // Resolve selected SMTP Gateway
+    let selectedGateway = null;
+    if (smtpGatewayId) {
+      if (isMongo) {
+        selectedGateway = await SmtpGateway.findById(smtpGatewayId);
+      } else {
+        selectedGateway = (store.smtpGateways || []).find(g => String(g._id) === String(smtpGatewayId));
+      }
+    }
+    if (!selectedGateway) {
+      if (isMongo) {
+        selectedGateway = await SmtpGateway.findOne({ isActive: true }).sort({ createdAt: 1 });
+      } else {
+        selectedGateway = (store.smtpGateways || []).find(g => g.isActive !== false);
+      }
+    }
+
     const totalRecipients = targetStudents.length;
     const isImmediate = !scheduledAt;
     const initialStatus = isImmediate ? 'Sending' : 'Scheduled';
@@ -137,6 +156,8 @@ const createCampaign = async (req, res) => {
         templateId: templateId || null,
         createdBy: req.user._id,
         createdByName: req.user.name,
+        smtpGatewayId: selectedGateway ? selectedGateway._id : null,
+        smtpGatewayName: selectedGateway ? selectedGateway.gatewayName : 'Primary Gateway',
         targetFilters: filters,
         audienceMode: audienceMode || 'filtered',
         baselineCampaignId: lastCampaign ? lastCampaign._id : null,
@@ -285,13 +306,31 @@ const retryFailedEmails = async (req, res) => {
 
 const sendTestEmail = async (req, res) => {
   try {
-    const { targetEmail, subject, bodyHtml, testStudentId } = req.body;
+    const { targetEmail, subject, bodyHtml, testStudentId, smtpGatewayId } = req.body;
 
     if (!targetEmail || !subject || !bodyHtml) {
       return res.status(400).json({ message: 'Target email, subject, and content are required' });
     }
 
-    const transporter = await createTransporter();
+    const isMongo = getIsConnected();
+    const store = getMemoryStore();
+
+    let targetGateway = null;
+    if (smtpGatewayId) {
+      if (isMongo) {
+        targetGateway = await SmtpGateway.findById(smtpGatewayId);
+      } else {
+        targetGateway = (store.smtpGateways || []).find(g => String(g._id) === String(smtpGatewayId));
+      }
+    } else {
+      if (isMongo) {
+        targetGateway = await SmtpGateway.findOne({ isActive: true }).sort({ createdAt: 1 });
+      } else {
+        targetGateway = (store.smtpGateways || []).find(g => g.isActive !== false);
+      }
+    }
+
+    const transporter = targetGateway ? await createTransporter(targetGateway) : await createTransporter();
 
     const sampleStudent = {
       name: 'Test Student',
@@ -309,7 +348,9 @@ const sendTestEmail = async (req, res) => {
     const result = await sendSingleEmail(transporter, {
       to: targetEmail,
       subject: `[TEST PREVIEW] ${personalizedSubject}`,
-      html: personalizedHtml
+      html: personalizedHtml,
+      fromName: targetGateway?.fromName,
+      fromEmail: targetGateway?.fromEmail
     });
 
     if (result.success) {
@@ -321,6 +362,7 @@ const sendTestEmail = async (req, res) => {
         rejected: result.rejected,
         sender: result.from,
         recipient: targetEmail,
+        gatewayName: targetGateway?.gatewayName || 'Primary Gateway',
         previewUrl: result.previewUrl
       });
     } else {

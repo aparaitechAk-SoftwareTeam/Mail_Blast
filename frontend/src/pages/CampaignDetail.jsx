@@ -12,7 +12,7 @@ import { SocketContext } from '../context/SocketContext';
 import { AuthContext } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { formatDate } from '../utils/formatters';
-import { Play, RefreshCw, CheckCircle2, AlertOctagon, Clock, Users, ArrowLeft, XCircle, Activity, Info } from 'lucide-react';
+import { Play, RefreshCw, CheckCircle2, AlertOctagon, Clock, Users, ArrowLeft, XCircle, Activity, Info, Server } from 'lucide-react';
 
 import { RefreshContext } from '../context/RefreshContext';
 
@@ -265,6 +265,34 @@ const CampaignDetail = () => {
           </div>
         </div>
 
+        {/* SMTP Gateway Infrastructure Banner */}
+        <div className="card border-0 shadow-sm rounded-4 bg-surface p-3 mb-4">
+          <div className="d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div className="d-flex align-items-center gap-2.5">
+              <div className="p-2 rounded-3 bg-primary-subtle text-primary" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Server size={18} />
+              </div>
+              <div>
+                <span className="text-muted fs-9 d-block">SMTP GATEWAY</span>
+                <span className="fw-bold text-dark fs-7">{campaign.smtpGatewayName || 'Brevo Gateway 01'}</span>
+              </div>
+            </div>
+
+            <div className="d-flex align-items-center gap-3">
+              <div className="text-end">
+                <span className="text-muted fs-9 d-block">GATEWAY STATUS</span>
+                <span className="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-0.5 rounded-pill fs-9">
+                  ● Connected
+                </span>
+              </div>
+              <div className="text-end">
+                <span className="text-muted fs-9 d-block">DISPATCHER</span>
+                <span className="fw-semibold text-dark fs-8">{campaign.createdByName || 'Recruiter'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Live Socket.IO Feed Banner */}
         <div className="alert alert-info border-0 rounded-4 p-3 mb-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
           <div className="d-flex align-items-center gap-2.5">
@@ -314,6 +342,7 @@ const CampaignDetail = () => {
                 <tr>
                   <th>Recipient Candidate</th>
                   <th>Email Address</th>
+                  <th>Gateway</th>
                   <th>Delivery Status</th>
                   <th>Message ID</th>
                   <th>SMTP Response / Failure Reason</th>
@@ -324,7 +353,7 @@ const CampaignDetail = () => {
               <tbody>
                 {filteredLogs.length === 0 ? (
                   <tr>
-                    <td colSpan="7">
+                    <td colSpan="8">
                       <EmptyState title="No log entries" description="No recipient logs match your filter." />
                     </td>
                   </tr>
@@ -333,6 +362,11 @@ const CampaignDetail = () => {
                     <tr key={l._id}>
                       <td className="fw-bold text-dark">{l.recipientName}</td>
                       <td>{l.recipientEmail}</td>
+                      <td>
+                        <span className="badge bg-light text-dark border fs-9">
+                          {l.gatewayName || campaign.smtpGatewayName || 'Brevo Gateway 01'}
+                        </span>
+                      </td>
                       <td>
                         <StatusBadge status={l.status === 'Sent' ? 'Accepted' : l.status} type="emailLog" />
                       </td>

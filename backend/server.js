@@ -120,8 +120,28 @@ app.delete('/api/suppressions/:id', protect, authorize('Admin'), removeSuppressi
 // Audit Logs Route
 app.get('/api/audit-logs', protect, authorize('Admin'), getAuditLogs);
 
-// System Settings Routes
-const { getSmtpSettings, updateSmtpSettings, testSmtpConnection, sendSmtpTestEmail, getDeliveryStatus } = require('./controllers/settingsController');
+// System Settings & Gateway Routes
+const { 
+  getSmtpSettings, 
+  updateSmtpSettings, 
+  testSmtpConnection, 
+  sendSmtpTestEmail, 
+  getDeliveryStatus,
+  getSmtpGateways,
+  createSmtpGateway,
+  updateSmtpGateway,
+  deleteSmtpGateway,
+  testSmtpGatewayConnection
+} = require('./controllers/settingsController');
+
+// Gateway Pool Routes
+app.get('/api/settings/smtp/gateways', protect, getSmtpGateways);
+app.post('/api/settings/smtp/gateways', protect, authorize('Admin'), createSmtpGateway);
+app.put('/api/settings/smtp/gateways/:id', protect, authorize('Admin'), updateSmtpGateway);
+app.delete('/api/settings/smtp/gateways/:id', protect, authorize('Admin'), deleteSmtpGateway);
+app.post('/api/settings/smtp/gateways/:id/test', protect, authorize('Admin', 'Recruiter'), testSmtpGatewayConnection);
+
+// System Settings & Test Email Routes
 app.get('/api/settings/smtp', protect, getSmtpSettings);
 app.post('/api/settings/smtp', protect, authorize('Admin'), updateSmtpSettings);
 app.post('/api/settings/smtp/test', protect, authorize('Admin', 'Recruiter'), testSmtpConnection);

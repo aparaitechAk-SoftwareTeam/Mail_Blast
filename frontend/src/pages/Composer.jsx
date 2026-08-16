@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/common/Navbar';
-import { createCampaign, sendTestEmail } from '../services/campaignService';
+import { createCampaign, sendTestEmail, fetchSmtpGateways } from '../services/campaignService';
 import { fetchStudents } from '../services/studentService';
 import { fetchTemplates } from '../services/templateService';
 import { PERSONALIZATION_TAGS } from '../utils/constants';
 import { useToast } from '../context/ToastContext';
 import { formatDate } from '../utils/formatters';
-import { Send, Eye, Monitor, Smartphone, Mail, Sparkles, Filter, CheckCircle2, Users, Calendar, ShieldAlert, List, XCircle, RotateCcw } from 'lucide-react';
+import { Send, Eye, Monitor, Smartphone, Mail, Sparkles, Filter, CheckCircle2, Users, Calendar, ShieldAlert, List, XCircle, RotateCcw, Server } from 'lucide-react';
 
 import Button from '../components/ui/Button';
 import { Input, Select, Textarea } from '../components/ui/Input';
@@ -60,15 +60,35 @@ const Composer = () => {
   const [sendingTest, setSendingTest] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Gateway Pool state
+  const [availableGateways, setAvailableGateways] = useState([]);
+  const [selectedGatewayId, setSelectedGatewayId] = useState('');
+
   const DRAFT_KEY = 'studentEmailBlast_composer_draft';
 
   useEffect(() => {
     document.title = 'Aparaitech | Email Composer';
     loadTemplates();
+    loadGatewaysData();
 
     // Ensure any legacy composer draft is purged on mount so composer starts completely fresh
     localStorage.removeItem(DRAFT_KEY);
   }, []);
+
+  const loadGatewaysData = async () => {
+    try {
+      const data = await fetchSmtpGateways();
+      if (data.gateways) {
+        setAvailableGateways(data.gateways);
+        const activeGw = data.gateways.find(g => g.isActive !== false);
+        if (activeGw) {
+          setSelectedGatewayId(activeGw._id);
+        }
+      }
+    } catch (err) {
+      console.error('Error loading gateways in composer:', err);
+    }
+  };
 
   useEffect(() => {
     updateRecipientCounter();
@@ -152,7 +172,8 @@ const Composer = () => {
       const res = await sendTestEmail({
         targetEmail: testEmailAddress,
         subject,
-        bodyHtml
+        bodyHtml,
+        smtpGatewayId: selectedGatewayId || null
       });
       setTestResult(res);
       toast.success(res.message || 'SMTP accepted test email!');
@@ -212,7 +233,8 @@ const Composer = () => {
         templateId: selectedTemplateId || null,
         targetFilters: filters,
         audienceMode,
-        scheduledAt: scheduledAt || null
+        scheduledAt: scheduledAt || null,
+        smtpGatewayId: selectedGatewayId || null
       });
 
       localStorage.removeItem(DRAFT_KEY);
@@ -570,6 +592,34 @@ const Composer = () => {
                     </div>
                   </div>
                 )}
+
+                {/* SMTP Gateway Selection */}
+                <div className="pt-3 border-top">
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <div className="d-flex align-items-center gap-1.5">
+                      <Server size={15} className="text-primary" />
+                      <span className="fw-semibold text-dark fs-9">SMTP Gateway</span>
+                    </div>
+                    {availableGateways.find(g => g._id === selectedGatewayId) && (
+                      <span className="badge bg-primary-subtle text-primary fs-9">
+                        {availableGateways.find(g => g._id === selectedGatewayId).remainingCapacity} / {availableGateways.find(g => g._id === selectedGatewayId).dailyQuota || 300} remaining
+                      </span>
+                    )}
+                  </div>
+                  <select
+                    className="form-select form-select-sm form-select-custom w-100 rounded-3"
+                    value={selectedGatewayId}
+                    onChange={(e) => setSelectedGatewayId(e.target.value)}
+                    style={{ height: '38px', borderRadius: '8px', fontSize: '0.85rem' }}
+                  >
+                    {availableGateways.map(g => (
+                      <option key={g._id} value={g._id} disabled={g.isActive === false}>
+                        {g.gatewayName} ({g.remainingCapacity} / {g.dailyQuota || 300} remaining){g.isActive === false ? ' [Disabled]' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-muted fs-9 d-block mt-1">Admin-selected gateway for campaign dispatch.</span>
+                </div>
 
                 {/* Schedule Launch Section */}
                 <div className="pt-3 border-top">

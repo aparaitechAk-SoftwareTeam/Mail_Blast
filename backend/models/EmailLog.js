@@ -6,6 +6,8 @@ const emailLogSchema = new mongoose.Schema({
   recipientEmail: { type: String, required: true, lowercase: true, trim: true },
   recipientName: { type: String, required: true, trim: true },
   subject: { type: String, required: true },
+  gatewayId: { type: mongoose.Schema.Types.ObjectId, ref: 'SmtpGateway', default: null },
+  gatewayName: { type: String, default: '' },
   status: {
     type: String,
     enum: ['Pending', 'Sending', 'Accepted', 'Sent', 'Delivered', 'Failed', 'Bounced', 'Suppressed', 'Retried'],
@@ -29,5 +31,6 @@ const emailLogSchema = new mongoose.Schema({
 
 emailLogSchema.index({ campaignId: 1, status: 1 });
 emailLogSchema.index({ recipientEmail: 1 });
+emailLogSchema.index({ gatewayId: 1, sentAt: 1 });
 
 module.exports = mongoose.model('EmailLog', emailLogSchema);

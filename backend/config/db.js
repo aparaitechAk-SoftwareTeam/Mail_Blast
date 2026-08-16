@@ -8,7 +8,8 @@ let memoryStore = {
   emailLogs: [],
   templates: [],
   suppressions: [],
-  auditLogs: []
+  auditLogs: [],
+  smtpGateways: []
 };
 
 const connectDB = async () => {

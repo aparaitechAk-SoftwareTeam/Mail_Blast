@@ -7,6 +7,8 @@ const campaignSchema = new mongoose.Schema({
   templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmailTemplate', default: null },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   createdByName: { type: String, default: '' },
+  smtpGatewayId: { type: mongoose.Schema.Types.ObjectId, ref: 'SmtpGateway', default: null },
+  smtpGatewayName: { type: String, default: '' },
   targetFilters: {
     college: { type: String, default: '' },
     branch: { type: String, default: '' },
