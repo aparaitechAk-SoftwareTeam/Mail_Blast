@@ -6,11 +6,13 @@ const axios = require('axios');
 const { createTransporter, verifySMTP, sendSingleEmail, getActiveSmtpCredentials } = require('../config/mailer');
 const { getIsConnected, getMemoryStore } = require('../config/db');
 const { logAudit } = require('../services/auditService');
+const { getTodayISTDateString, getStartOfTodayIST } = require('../utils/dateUtils');
 
 // Ensure at least 1 gateway exists by converting legacy SystemSettings / .env config into Gateway 1
 const ensureDefaultGateway = async () => {
   const isMongo = getIsConnected();
   const store = getMemoryStore();
+  const todayISTStr = getTodayISTDateString();
 
   if (isMongo) {
     const count = await SmtpGateway.countDocuments();
@@ -27,6 +29,8 @@ const ensureDefaultGateway = async () => {
         fromName: settings?.fromName || process.env.SMTP_FROM_NAME || 'Aparaitech Software',
         fromEmail: settings?.fromEmail || process.env.SMTP_FROM_EMAIL || 'krushnarathod.aparaitech@gmail.com',
         dailyQuota: 300,
+        dailyUsed: 0,
+        usageDate: todayISTStr,
         isActive: true,
         connectionStatus: 'Connected',
         lastConnectionTest: new Date()
@@ -46,6 +50,8 @@ const ensureDefaultGateway = async () => {
         fromName: process.env.SMTP_FROM_NAME || 'Aparaitech Software',
         fromEmail: process.env.SMTP_FROM_EMAIL || 'krushnarathod.aparaitech@gmail.com',
         dailyQuota: 300,
+        dailyUsed: 0,
+        usageDate: todayISTStr,
         isActive: true,
         connectionStatus: 'Connected',
         lastConnectionTest: new Date(),
@@ -56,71 +62,123 @@ const ensureDefaultGateway = async () => {
   }
 };
 
-// Calculate daily sent count for a specific gateway
-const getGatewayDailyUsage = async (gatewayId) => {
-  const startOfCalendarDay = new Date();
-  startOfCalendarDay.setHours(0, 0, 0, 0);
-  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const effectiveStart = twentyFourHoursAgo < startOfCalendarDay ? twentyFourHoursAgo : startOfCalendarDay;
-
+// Ensure gateway daily counter is reset to 0 if calendar date in Asia/Kolkata changed
+const ensureGatewayDailyReset = async (gateway) => {
+  if (!gateway) return null;
+  const todayISTStr = getTodayISTDateString();
   const isMongo = getIsConnected();
+
   if (isMongo) {
-    let gatewayFilter = {};
-    if (gatewayId) {
-      const gIdStr = String(gatewayId);
-      let gObjId = null;
-      if (mongoose.Types.ObjectId.isValid(gIdStr)) {
-        gObjId = new mongoose.Types.ObjectId(gIdStr);
-      }
-
-      const allGateways = await SmtpGateway.find().sort({ createdAt: 1 });
-      const isFirstGateway = allGateways.length > 0 && String(allGateways[0]._id) === gIdStr;
-
-      if (isFirstGateway) {
-        gatewayFilter = {
-          $or: [
-            { gatewayId: gObjId },
-            { gatewayId: gIdStr },
-            { gatewayId: null },
-            { gatewayId: { $exists: false } }
-          ]
-        };
-      } else {
-        gatewayFilter = {
-          $or: [
-            { gatewayId: gObjId },
-            { gatewayId: gIdStr }
-          ]
-        };
-      }
+    let gwDoc = gateway;
+    if (typeof gateway === 'string' || gateway instanceof mongoose.Types.ObjectId || (gateway._id && typeof gateway.save !== 'function')) {
+      const gId = gateway._id || gateway;
+      gwDoc = await SmtpGateway.findById(gId);
     }
-
-    const query = {
-      status: 'Sent',
-      sentAt: { $gte: effectiveStart },
-      campaignId: { $ne: null },
-      ...gatewayFilter
-    };
-
-    return await EmailLog.countDocuments(query);
+    if (gwDoc && gwDoc.usageDate !== todayISTStr) {
+      gwDoc.dailyUsed = 0;
+      gwDoc.usageDate = todayISTStr;
+      await gwDoc.save();
+    }
+    return gwDoc;
   } else {
     const store = getMemoryStore();
-    return (store.emailLogs || []).filter(l => {
-      const matchGateway = !gatewayId || String(l.gatewayId) === String(gatewayId);
-      const isSent = l.status === 'Sent';
-      const isCampaign = !!l.campaignId;
-      const sentTime = l.sentAt ? new Date(l.sentAt) : new Date(0);
-      return matchGateway && isSent && isCampaign && sentTime >= effectiveStart;
-    }).length;
+    const gId = typeof gateway === 'object' && gateway._id ? String(gateway._id) : String(gateway);
+    const gwObj = (store.smtpGateways || []).find(g => String(g._id) === gId);
+    if (gwObj && gwObj.usageDate !== todayISTStr) {
+      gwObj.dailyUsed = 0;
+      gwObj.usageDate = todayISTStr;
+    }
+    return gwObj || (typeof gateway === 'object' ? gateway : null);
   }
+};
+
+// Atomically increment gateway daily counter on successful email dispatch
+const incrementGatewayUsage = async (gatewayId) => {
+  if (!gatewayId) return null;
+  const todayISTStr = getTodayISTDateString();
+  const isMongo = getIsConnected();
+
+  if (isMongo) {
+    const gIdStr = String(gatewayId);
+    let gObjId = mongoose.Types.ObjectId.isValid(gIdStr) ? new mongoose.Types.ObjectId(gIdStr) : gIdStr;
+
+    // Reset date if outdated before incrementing
+    const gw = await SmtpGateway.findById(gObjId);
+    if (gw && gw.usageDate !== todayISTStr) {
+      gw.dailyUsed = 0;
+      gw.usageDate = todayISTStr;
+      await gw.save();
+    }
+
+    const updated = await SmtpGateway.findByIdAndUpdate(
+      gObjId,
+      {
+        $inc: { dailyUsed: 1 },
+        $set: { usageDate: todayISTStr, lastSuccessfulSend: new Date() }
+      },
+      { new: true }
+    );
+    return updated;
+  } else {
+    const store = getMemoryStore();
+    const gw = (store.smtpGateways || []).find(g => String(g._id) === String(gatewayId));
+    if (gw) {
+      if (gw.usageDate !== todayISTStr) {
+        gw.dailyUsed = 0;
+        gw.usageDate = todayISTStr;
+      }
+      gw.dailyUsed = (gw.dailyUsed || 0) + 1;
+      gw.lastSuccessfulSend = new Date();
+      return gw;
+    }
+    return null;
+  }
+};
+
+// Get current gateway daily usage directly from SmtpGateway record (authoritative source of truth)
+const getGatewayDailyUsage = async (gatewayId) => {
+  const gwDoc = await ensureGatewayDailyReset(gatewayId);
+  return gwDoc ? (gwDoc.dailyUsed || 0) : 0;
+};
+
+// Get list of eligible active gateways with available daily capacity, sorted by priority (createdAt)
+const getEligibleGatewayPool = async () => {
+  const isMongo = getIsConnected();
+  const store = getMemoryStore();
+  let gateways = [];
+
+  if (isMongo) {
+    gateways = await SmtpGateway.find().sort({ createdAt: 1 });
+  } else {
+    gateways = store.smtpGateways || [];
+  }
+
+  const eligible = [];
+  for (const gw of gateways) {
+    const gwDoc = await ensureGatewayDailyReset(gw);
+    if (!gwDoc) continue;
+
+    const dailyQuota = gwDoc.dailyQuota || 300;
+    const dailyUsed = gwDoc.dailyUsed || 0;
+    const isActive = gwDoc.isActive !== false;
+    const isConnected = gwDoc.connectionStatus !== 'Disconnected';
+
+    if (isActive && isConnected && dailyUsed < dailyQuota) {
+      eligible.push(gwDoc);
+    }
+  }
+
+  return eligible;
 };
 
 // Sanitize gateway object for client (strip passwords)
 const sanitizeGateway = (gw, usage = 0) => {
   const obj = gw.toObject ? gw.toObject() : { ...gw };
+  const todayISTStr = getTodayISTDateString();
   const dailyQuota = obj.dailyQuota || 300;
-  const remainingCapacity = Math.max(0, dailyQuota - usage);
-  const usagePercentage = dailyQuota > 0 ? Math.min(100, Math.round((usage / dailyQuota) * 100)) : 0;
+  const actualUsage = typeof usage === 'number' ? usage : (obj.dailyUsed || 0);
+  const remainingCapacity = Math.max(0, dailyQuota - actualUsage);
+  const usagePercentage = dailyQuota > 0 ? Math.min(100, Math.round((actualUsage / dailyQuota) * 100)) : 0;
   const passConfigured = !!obj.smtpPass;
   delete obj.smtpPass;
 
@@ -131,9 +189,16 @@ const sanitizeGateway = (gw, usage = 0) => {
 
   return {
     ...obj,
-    dailyUsage: usage,
+    dailyUsage: actualUsage,
+    dailyUsed: actualUsage,
+    dailyUsageCount: actualUsage,
+    dailyQuota,
+    dailyLimit: dailyQuota,
+    remainingCap: remainingCapacity,
     remainingCapacity,
+    usagePct: usagePercentage,
     usagePercentage,
+    usageDate: obj.usageDate || todayISTStr,
     passConfigured,
     connectionStatus: computedStatus
   };
@@ -557,6 +622,7 @@ const sendSmtpTestEmail = async (req, res) => {
         targetGateway.lastConnectionTest = new Date();
         targetGateway.connectionStatus = 'Connected';
         if (isMongo) await targetGateway.save();
+        await incrementGatewayUsage(targetGateway._id);
       }
 
       res.json({
@@ -670,5 +736,8 @@ module.exports = {
   deleteSmtpGateway,
   testSmtpGatewayConnection,
   ensureDefaultGateway,
-  getGatewayDailyUsage
+  ensureGatewayDailyReset,
+  incrementGatewayUsage,
+  getGatewayDailyUsage,
+  getEligibleGatewayPool
 };

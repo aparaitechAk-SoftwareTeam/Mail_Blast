@@ -300,10 +300,19 @@ const Settings = () => {
         {/* 2. SMTP Gateway Cards Grid (Equal Heights & Premium Simple Admin Layout) */}
         <div className="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4 mb-4">
           {gateways.map((gw) => {
-            const hasUsageData = typeof gw.dailyUsage === 'number' && typeof gw.dailyQuota === 'number' && typeof gw.remainingCapacity === 'number';
-            const usagePct = hasUsageData 
-              ? (typeof gw.usagePercentage === 'number' ? gw.usagePercentage : Math.min(100, Math.round((gw.dailyUsage / gw.dailyQuota) * 100))) 
-              : 0;
+            const dailyUsageCount = typeof gw.dailyUsageCount === 'number' 
+              ? gw.dailyUsageCount 
+              : (typeof gw.dailyUsed === 'number' ? gw.dailyUsed : (typeof gw.dailyUsage === 'number' ? gw.dailyUsage : 0));
+            const dailyQuota = gw.dailyQuota || gw.dailyLimit || 300;
+            const remainingCap = typeof gw.remainingCap === 'number'
+              ? gw.remainingCap
+              : (typeof gw.remainingCapacity === 'number' ? gw.remainingCapacity : Math.max(0, dailyQuota - dailyUsageCount));
+            const hasUsageData = true;
+            const usagePct = typeof gw.usagePct === 'number'
+              ? gw.usagePct
+              : (typeof gw.usagePercentage === 'number' 
+                ? gw.usagePercentage 
+                : (dailyQuota > 0 ? Math.min(100, Math.round((dailyUsageCount / dailyQuota) * 100)) : 0));
 
             const isTesting = testingGatewayId === gw._id;
             const statusClass = 
@@ -336,7 +345,7 @@ const Settings = () => {
                     </span>
                   </div>
 
-                  {/* Clean 3-Row Information Block (No Nested Cards, Two Columns) */}
+                  {/* Clean Information Block */}
                   <div className="d-flex flex-column gap-2 mb-3.5 fs-8">
                     <div className="d-flex align-items-center justify-content-between gap-2">
                       <span className="text-muted fs-9 flex-shrink-0" style={{ whiteSpace: 'nowrap' }}>SMTP Host</span>
@@ -358,57 +367,19 @@ const Settings = () => {
                         {gw.fromEmail}
                       </span>
                     </div>
-                  </div>
 
-                  {/* Today's Usage Breakdown (Visual Focus) */}
-                  <div className="p-3 rounded-3 bg-light border mb-3">
-                    <div className="d-flex align-items-center justify-content-between mb-1.5">
-                      <span className="text-muted fs-9 fw-semibold text-uppercase" style={{ letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>TODAY'S USAGE</span>
-                      <span className="fw-bold text-dark fs-5 font-monospace">
-                        {hasUsageData ? `${gw.dailyUsage} / ${gw.dailyQuota} emails` : 'Usage unavailable'}
+                    <div className="d-flex align-items-center justify-content-between gap-2">
+                      <span className="text-muted fs-9 flex-shrink-0" style={{ whiteSpace: 'nowrap' }}>Last sent</span>
+                      <span className="fw-semibold text-dark fs-9 text-end">
+                        {gw.lastSuccessfulSend ? formatDate(gw.lastSuccessfulSend) : 'Never'}
                       </span>
                     </div>
 
-                    <div className="progress mb-1.5" style={{ height: '8px', borderRadius: '4px', backgroundColor: '#E2E8F0' }}>
-                      <div 
-                        className={`progress-bar ${usagePct >= 90 ? 'bg-danger' : usagePct >= 75 ? 'bg-warning' : 'bg-primary'}`} 
-                        role="progressbar" 
-                        style={{ width: `${usagePct}%` }}
-                      />
-                    </div>
-
-                    <div className="text-muted fs-9 mb-2.5 text-end fw-semibold text-dark">
-                      {hasUsageData ? `${usagePct}% used` : 'N/A'}
-                    </div>
-
-                    <div className="pt-2 border-top row text-center g-1 align-items-center fs-9">
-                      <div className="col-4">
-                        <span className="text-muted d-block fs-9" style={{ whiteSpace: 'nowrap' }}>REMAINING</span>
-                        <span className="fw-bold text-dark d-block fs-6">{hasUsageData ? `${gw.remainingCapacity}` : '—'}</span>
-                        <span className="text-muted fs-9">emails</span>
-                      </div>
-                      <div className="col-4 border-start border-end">
-                        <span className="text-muted d-block fs-9" style={{ whiteSpace: 'nowrap' }}>USED</span>
-                        <span className="fw-bold text-primary d-block fs-6">{hasUsageData ? `${gw.dailyUsage}` : '—'}</span>
-                        <span className="text-muted fs-9">emails</span>
-                      </div>
-                      <div className="col-4">
-                        <span className="text-muted d-block fs-9" style={{ whiteSpace: 'nowrap' }}>DAILY LIMIT</span>
-                        <span className="fw-bold text-dark d-block fs-6">{hasUsageData ? `${gw.dailyQuota}` : '—'}</span>
-                        <span className="text-muted fs-9">emails</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Compact Last Activity Section */}
-                  <div className="d-flex flex-column gap-1.5 text-muted fs-9 mb-3.5 px-1">
-                    <div className="d-flex align-items-center justify-content-between">
-                      <span className="text-muted">Last sent</span>
-                      <span className="fw-semibold text-dark">{gw.lastSuccessfulSend ? formatDate(gw.lastSuccessfulSend) : 'Never'}</span>
-                    </div>
-                    <div className="d-flex align-items-center justify-content-between">
-                      <span className="text-muted">Last tested</span>
-                      <span className="fw-semibold text-dark">{gw.lastConnectionTest ? formatDate(gw.lastConnectionTest) : 'Never'}</span>
+                    <div className="d-flex align-items-center justify-content-between gap-2">
+                      <span className="text-muted fs-9 flex-shrink-0" style={{ whiteSpace: 'nowrap' }}>Last tested</span>
+                      <span className="fw-semibold text-dark fs-9 text-end">
+                        {gw.lastConnectionTest ? formatDate(gw.lastConnectionTest) : 'Never'}
+                      </span>
                     </div>
                   </div>
 
@@ -492,7 +463,7 @@ const Settings = () => {
                   onChange={(e) => setSelectedTestGatewayId(e.target.value)}
                   options={gateways.map(g => ({
                     value: g._id,
-                    label: `${g.gatewayName} (${g.remainingCapacity} / ${g.dailyQuota} remaining)`
+                    label: g.gatewayName
                   }))}
                 />
               </div>

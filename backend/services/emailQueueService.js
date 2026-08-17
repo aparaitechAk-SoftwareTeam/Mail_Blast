@@ -6,6 +6,7 @@ const SmtpGateway = require('../models/SmtpGateway');
 const { createTransporter, sendSingleEmail, getActiveSmtpCredentials } = require('../config/mailer');
 const { emitCampaignProgress, emitEmailStatus } = require('../sockets/campaignSocket');
 const { getIsConnected, getMemoryStore } = require('../config/db');
+const { getStartOfTodayIST, getTodayISTDateString } = require('../utils/dateUtils');
 
 // Active Queue Concurrency Lock Set
 const activeCampaignLocks = new Set();
@@ -25,30 +26,11 @@ const personalizeContent = (htmlContent, student) => {
     .replace(/\{PlacementStatus\}/gi, student.placementStatus || 'Unplaced');
 };
 
-// Calculate today's sent count for a specific gateway
+// Calculate today's sent count for a specific gateway directly from SmtpGateway record (authoritative source of truth)
 const getGatewayDailyUsage = async (gatewayId) => {
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-
-  const isMongo = getIsConnected();
-  if (isMongo) {
-    const query = {
-      status: 'Sent',
-      sentAt: { $gte: startOfDay }
-    };
-    if (gatewayId) {
-      query.gatewayId = gatewayId;
-    }
-    return await EmailLog.countDocuments(query);
-  } else {
-    const store = getMemoryStore();
-    return (store.emailLogs || []).filter(l => {
-      const matchGateway = !gatewayId || String(l.gatewayId) === String(gatewayId);
-      const isSent = l.status === 'Sent';
-      const sentTime = l.sentAt ? new Date(l.sentAt) : new Date(0);
-      return matchGateway && isSent && sentTime >= startOfDay;
-    }).length;
-  }
+  const { ensureGatewayDailyReset } = require('../controllers/settingsController');
+  const gwDoc = await ensureGatewayDailyReset(gatewayId);
+  return gwDoc ? (gwDoc.dailyUsed || 0) : 0;
 };
 
 const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
@@ -185,15 +167,28 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
         continue;
       }
 
-      // CHECK GATEWAY QUOTA CAPACITY BEFORE EACH DISPATCH
-      if (remainingCapacity <= 0) {
-        console.warn(`[GATEWAY QUOTA REACHED] Gateway "${gateway?.gatewayName || 'Gateway'}" has reached its daily quota limit (${dailyQuota}). Leaving remaining recipients Pending.`);
+      // 1. Get current pool of eligible gateways (not exhausted, active, connected)
+      const { getEligibleGatewayPool, incrementGatewayUsage } = require('../controllers/settingsController');
+      let eligiblePool = await getEligibleGatewayPool();
+
+      // If campaign selected a specific gateway and it is in eligible pool, put it first
+      if (campaign.smtpGatewayId) {
+        const campaignGwStr = String(campaign.smtpGatewayId);
+        const targetIdx = eligiblePool.findIndex(g => String(g._id) === campaignGwStr);
+        if (targetIdx > 0) {
+          const targetedGw = eligiblePool.splice(targetIdx, 1)[0];
+          eligiblePool.unshift(targetedGw);
+        }
+      }
+
+      if (eligiblePool.length === 0) {
+        console.warn(`[GATEWAY POOL EXHAUSTED] All SMTP gateways in pool are exhausted, disabled, or disconnected. Leaving recipient pending.`);
         log.status = 'Pending';
-        log.errorMessage = `Pending — Gateway Quota Reached (${dailyQuota}/day)`;
+        log.errorMessage = `Pending — No eligible SMTP gateway available with daily quota`;
         if (isMongo) await log.save();
 
-        emitEmailStatus(cid, { logId: log._id, recipientEmail, status: 'Pending', error: log.errorMessage, gatewayId: gateway?._id, gatewayName: gateway?.gatewayName });
-        continue; // Skip dispatching, remain pending for manual continuation
+        emitEmailStatus(cid, { logId: log._id, recipientEmail, status: 'Pending', error: log.errorMessage });
+        continue;
       }
 
       // Atomic transition to Sending before send
@@ -221,71 +216,88 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
       const personalizedHtml = personalizeContent(campaign.bodyHtml, studentData);
       const personalizedSubject = personalizeContent(campaign.subject, studentData);
 
-      // Attempt sending via Gateway Nodemailer transporter
-      const result = await sendSingleEmail(transporter, {
-        to: log.recipientEmail,
-        subject: personalizedSubject,
-        html: personalizedHtml,
-        fromName: gateway?.fromName,
-        fromEmail: gateway?.fromEmail
-      });
+      let sendSuccess = false;
+      let lastAttemptErr = '';
+      let successfulGw = null;
 
-      if (result.success && result.messageId) {
-        log.status = 'Sent';
-        log.deliveryStatus = 'Accepted';
-        log.messageId = result.messageId;
-        log.smtpResponse = result.smtpResponse || '250 OK';
-        log.accepted = result.accepted !== false;
-        log.rejected = false;
-        log.sentAt = new Date();
-        log.errorMessage = '';
-        log.failureReason = '';
-        log.gatewayId = gateway?._id || null;
-        log.gatewayName = gateway?.gatewayName || '';
-        sent++;
-        remainingCapacity--; // Decrement remaining capacity for this gateway
+      // 2. Loop through eligible gateways in failover order
+      for (const currentGw of eligiblePool) {
+        const quota = currentGw.dailyQuota || 300;
+        const used = currentGw.dailyUsed || 0;
+        if (used >= quota) {
+          console.warn(`[GATEWAY EXHAUSTED] Gateway "${currentGw.gatewayName}" (${used}/${quota}) limit reached. Trying next eligible gateway...`);
+          continue;
+        }
 
-        if (isMongo) {
-          await EmailLog.findByIdAndUpdate(log._id, {
-            status: 'Sent',
-            deliveryStatus: 'Accepted',
-            messageId: result.messageId,
-            smtpResponse: result.smtpResponse || '250 OK',
-            accepted: true,
-            rejected: false,
-            sentAt: log.sentAt,
-            errorMessage: '',
-            failureReason: '',
-            gatewayId: gateway?._id || null,
-            gatewayName: gateway?.gatewayName || ''
+        try {
+          const currentTransporter = await createTransporter(currentGw);
+          const result = await sendSingleEmail(currentTransporter, {
+            to: log.recipientEmail,
+            subject: personalizedSubject,
+            html: personalizedHtml,
+            fromName: currentGw.fromName,
+            fromEmail: currentGw.fromEmail
           });
 
-          // Update Gateway last successful send timestamp
-          if (gateway) {
-            await SmtpGateway.findByIdAndUpdate(gateway._id, { lastSuccessfulSend: new Date() });
+          if (result.success && result.messageId) {
+            sendSuccess = true;
+            successfulGw = currentGw;
+            log.status = 'Sent';
+            log.deliveryStatus = 'Accepted';
+            log.messageId = result.messageId;
+            log.smtpResponse = result.smtpResponse || '250 OK';
+            log.accepted = result.accepted !== false;
+            log.rejected = false;
+            log.sentAt = new Date();
+            log.errorMessage = '';
+            log.failureReason = '';
+            log.gatewayId = currentGw._id;
+            log.gatewayName = currentGw.gatewayName;
+            sent++;
+
+            if (isMongo) {
+              await EmailLog.findByIdAndUpdate(log._id, {
+                status: 'Sent',
+                deliveryStatus: 'Accepted',
+                messageId: result.messageId,
+                smtpResponse: result.smtpResponse || '250 OK',
+                accepted: true,
+                rejected: false,
+                sentAt: log.sentAt,
+                errorMessage: '',
+                failureReason: '',
+                gatewayId: currentGw._id,
+                gatewayName: currentGw.gatewayName
+              });
+            }
+
+            // Atomically increment ONLY the gateway that successfully delivered the email
+            await incrementGatewayUsage(currentGw._id);
+            break; // Break failover loop on success!
+          } else {
+            lastAttemptErr = result.error || 'SMTP delivery failed';
+            console.warn(`[GATEWAY FAILOVER NOTICE] Gateway "${currentGw.gatewayName}" failed send: ${lastAttemptErr}. Attempting failover...`);
           }
-        } else {
-          if (gateway) gateway.lastSuccessfulSend = new Date();
+        } catch (gwErr) {
+          lastAttemptErr = gwErr.message;
+          console.warn(`[GATEWAY EXCEPTION NOTICE] Gateway "${currentGw.gatewayName}" error: ${lastAttemptErr}. Attempting failover...`);
         }
-      } else {
-        const failureErr = result.error || (result.success ? 'No Message ID returned by SMTP server' : 'SMTP Delivery Failed');
+      }
+
+      if (!sendSuccess) {
         log.status = 'Failed';
         log.deliveryStatus = 'Failed';
-        log.errorMessage = failureErr;
-        log.failureReason = failureErr;
+        log.errorMessage = lastAttemptErr || 'Dispatch failed via all available SMTP gateways';
+        log.failureReason = lastAttemptErr || 'All gateway attempts failed';
         log.retryCount = (log.retryCount || 0) + 1;
-        log.gatewayId = gateway?._id || null;
-        log.gatewayName = gateway?.gatewayName || '';
         failed++;
 
         if (isMongo) {
           await EmailLog.findByIdAndUpdate(log._id, {
             status: 'Failed',
             deliveryStatus: 'Failed',
-            errorMessage: failureErr,
-            failureReason: failureErr,
-            gatewayId: gateway?._id || null,
-            gatewayName: gateway?.gatewayName || '',
+            errorMessage: log.errorMessage,
+            failureReason: log.failureReason,
             $inc: { retryCount: 1 }
           });
         }

@@ -645,11 +645,6 @@ const Composer = () => {
                       <Server size={15} className="text-primary" />
                       <span className="fw-semibold text-dark fs-9">SMTP Gateway</span>
                     </div>
-                    {availableGateways.find(g => g._id === selectedGatewayId) && (
-                      <span className="badge bg-primary-subtle text-primary fs-9">
-                        {availableGateways.find(g => g._id === selectedGatewayId).remainingCapacity} / {availableGateways.find(g => g._id === selectedGatewayId).dailyQuota || 300} remaining
-                      </span>
-                    )}
                   </div>
                   <select
                     className="form-select form-select-sm form-select-custom w-100 rounded-3"
@@ -659,7 +654,7 @@ const Composer = () => {
                   >
                     {availableGateways.map(g => (
                       <option key={g._id} value={g._id} disabled={g.isActive === false}>
-                        {g.gatewayName} ({g.remainingCapacity} / {g.dailyQuota || 300} remaining){g.isActive === false ? ' [Disabled]' : ''}
+                        {g.gatewayName}{g.isActive === false ? ' [Disabled]' : ''}
                       </option>
                     ))}
                   </select>
