@@ -60,3 +60,33 @@ export const testSmtpGatewayConnection = async (id) => {
   return res.data;
 };
 
+export const generateDuplicateTitle = (title, existingCampaigns = []) => {
+  if (!title || typeof title !== 'string') return 'Untitled Campaign - Copy';
+
+  const existingTitles = existingCampaigns.map(c => (typeof c === 'string' ? c : c?.title || ''));
+
+  let baseTitle = title;
+  const copySuffixRegex = / - Copy(?: (\d+))?$/;
+  const match = title.match(copySuffixRegex);
+  if (match) {
+    baseTitle = title.replace(copySuffixRegex, '');
+  }
+
+  let candidate = '';
+  if (match) {
+    const currentNum = match[1] ? parseInt(match[1], 10) : 1;
+    candidate = `${baseTitle} - Copy ${currentNum + 1}`;
+  } else {
+    candidate = `${baseTitle} - Copy`;
+  }
+
+  let counter = match && match[1] ? parseInt(match[1], 10) + 1 : 1;
+  while (existingTitles.includes(candidate)) {
+    counter++;
+    candidate = `${baseTitle} - Copy ${counter}`;
+  }
+
+  return candidate;
+};
+
+

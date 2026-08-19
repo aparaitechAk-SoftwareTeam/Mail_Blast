@@ -7,7 +7,7 @@ import { fetchTemplates } from '../services/templateService';
 import { PERSONALIZATION_TAGS } from '../utils/constants';
 import { useToast } from '../context/ToastContext';
 import { formatDate } from '../utils/formatters';
-import { Send, Eye, Monitor, Smartphone, Mail, Sparkles, Filter, CheckCircle2, Users, Calendar, ShieldAlert, List, XCircle, RotateCcw, Server, Check } from 'lucide-react';
+import { Send, Eye, Monitor, Smartphone, Mail, Sparkles, Filter, CheckCircle2, Users, Calendar, ShieldAlert, List, XCircle, RotateCcw, Server, Check, Copy } from 'lucide-react';
 
 import Button from '../components/ui/Button';
 import { Input, Select, Textarea } from '../components/ui/Input';
@@ -48,6 +48,7 @@ const Composer = () => {
   const [templates, setTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [loadedTemplateBanner, setLoadedTemplateBanner] = useState('');
+  const [duplicatedBanner, setDuplicatedBanner] = useState('');
 
   // Modals state
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -74,6 +75,43 @@ const Composer = () => {
 
     // Ensure any legacy composer draft is purged on mount so composer starts completely fresh
     localStorage.removeItem(DRAFT_KEY);
+
+    // Read duplicated campaign passed via React Router state or sessionStorage
+    let targetDuplicated = location.state?.duplicatedCampaign;
+    if (!targetDuplicated) {
+      try {
+        const storedDup = sessionStorage.getItem('composerDuplicatedCampaign');
+        if (storedDup) {
+          targetDuplicated = JSON.parse(storedDup);
+        }
+      } catch (e) {
+        console.error('Error parsing stored duplicated campaign:', e);
+      }
+    }
+
+    if (targetDuplicated) {
+      if (targetDuplicated.title) setTitle(targetDuplicated.title);
+      if (targetDuplicated.subject) setSubject(targetDuplicated.subject);
+      if (targetDuplicated.bodyHtml) setBodyHtml(targetDuplicated.bodyHtml);
+      if (targetDuplicated.audienceMode) setAudienceMode(targetDuplicated.audienceMode);
+      if (targetDuplicated.targetFilters) {
+        setFilters({
+          college: targetDuplicated.targetFilters.college || '',
+          branch: targetDuplicated.targetFilters.branch || '',
+          graduationYear: targetDuplicated.targetFilters.graduationYear || '',
+          minCgpa: targetDuplicated.targetFilters.minCgpa || '',
+          placementStatus: targetDuplicated.targetFilters.placementStatus || ''
+        });
+      }
+      if (targetDuplicated.smtpGatewayId) {
+        setSelectedGatewayId(targetDuplicated.smtpGatewayId);
+      }
+
+      const origTitle = targetDuplicated.originalTitle || targetDuplicated.title;
+      setDuplicatedBanner(origTitle);
+
+      sessionStorage.removeItem('composerDuplicatedCampaign');
+    }
 
     // Read template passed from Templates page via React Router state or sessionStorage
     let targetTemplate = location.state?.template;
@@ -318,6 +356,12 @@ const Composer = () => {
                   </div>
 
                   <div className="d-flex align-items-center gap-2 flex-wrap">
+                    {duplicatedBanner && (
+                      <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1.5 rounded-pill fs-9 fw-semibold d-inline-flex align-items-center gap-1">
+                        <Copy size={12} strokeWidth={2.5} /> Duplicated from: {duplicatedBanner}
+                      </span>
+                    )}
+
                     {loadedTemplateBanner && (
                       <span className="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1.5 rounded-pill fs-9 fw-semibold d-inline-flex align-items-center gap-1">
                         <Check size={12} strokeWidth={3} /> Template loaded: {loadedTemplateBanner}

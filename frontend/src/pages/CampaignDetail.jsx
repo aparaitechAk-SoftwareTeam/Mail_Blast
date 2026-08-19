@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import Navbar from '../components/common/Navbar';
 import StatCard from '../components/ui/StatCard';
 import Button from '../components/ui/Button';
@@ -7,16 +7,17 @@ import StatusBadge from '../components/ui/StatusBadge';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { TableSkeleton } from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
-import { fetchCampaignById, launchCampaign, retryFailedEmails, fetchDeliveryStatus } from '../services/campaignService';
+import { fetchCampaignById, launchCampaign, retryFailedEmails, fetchDeliveryStatus, generateDuplicateTitle } from '../services/campaignService';
 import { SocketContext } from '../context/SocketContext';
 import { AuthContext } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { formatDate } from '../utils/formatters';
-import { Play, RefreshCw, CheckCircle2, AlertOctagon, Clock, Users, ArrowLeft, XCircle, Activity, Info, Server } from 'lucide-react';
+import { Play, RefreshCw, CheckCircle2, AlertOctagon, Clock, Users, ArrowLeft, XCircle, Activity, Info, Server, Copy } from 'lucide-react';
 
 import { RefreshContext } from '../context/RefreshContext';
 
 const CampaignDetail = () => {
+  const navigate = useNavigate();
   const { id } = useParams();
   const { user } = useContext(AuthContext);
   const socket = useContext(SocketContext);
@@ -32,6 +33,23 @@ const CampaignDetail = () => {
   const [showConfirmLaunch, setShowConfirmLaunch] = useState(false);
   const [selectedDiagnostic, setSelectedDiagnostic] = useState(null);
   const [checkingDiagnostic, setCheckingDiagnostic] = useState(false);
+
+  const handleDuplicate = () => {
+    if (!campaign) return;
+    const newTitle = generateDuplicateTitle(campaign.title);
+    const duplicatedData = {
+      title: newTitle,
+      subject: campaign.subject || '',
+      bodyHtml: campaign.bodyHtml || '',
+      audienceMode: campaign.audienceMode || 'filtered',
+      targetFilters: campaign.targetFilters || {},
+      smtpGatewayId: campaign.smtpGatewayId || null,
+      originalTitle: campaign.title
+    };
+    sessionStorage.setItem('composerDuplicatedCampaign', JSON.stringify(duplicatedData));
+    toast.success('Campaign duplicated');
+    navigate('/composer', { state: { duplicatedCampaign: duplicatedData } });
+  };
 
   const handleCheckBrevoStatus = async (logItem) => {
     if (!logItem?.messageId && !logItem?._id) {
@@ -192,6 +210,10 @@ const CampaignDetail = () => {
 
           {user?.role !== 'Viewer' && (
             <div className="d-flex align-items-center gap-2">
+              <Button variant="outline" icon={Copy} onClick={handleDuplicate}>
+                Duplicate Campaign
+              </Button>
+
               {campaign.status === 'Draft' || campaign.status === 'Scheduled' ? (
                 <Button variant="primary" icon={Play} onClick={() => setShowConfirmLaunch(true)}>
                   Dispatch Campaign Now

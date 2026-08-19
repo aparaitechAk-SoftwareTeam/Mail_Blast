@@ -1,23 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useContext } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../components/common/Navbar';
-import { fetchCampaigns } from '../services/campaignService';
+import { fetchCampaigns, fetchCampaignById, generateDuplicateTitle } from '../services/campaignService';
 import { formatDate } from '../utils/formatters';
-import { Eye, RefreshCw, Send, AlertTriangle } from 'lucide-react';
+import { Eye, RefreshCw, MoreVertical, Copy } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 import Button from '../components/ui/Button';
 import StatusBadge from '../components/ui/StatusBadge';
 import { TableSkeleton } from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
 
-import { useContext } from 'react';
 import { RefreshContext } from '../context/RefreshContext';
 
 const Campaigns = () => {
+  const navigate = useNavigate();
+  const toast = useToast();
   const { refreshKey } = useContext(RefreshContext);
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [openDropdownId, setOpenDropdownId] = useState(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -35,6 +38,48 @@ const Campaigns = () => {
     document.title = 'Aparaitech | Campaigns';
     loadData();
   }, [statusFilter, refreshKey]);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('.campaign-actions-dropdown')) {
+        setOpenDropdownId(null);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  const handleDuplicate = async (c) => {
+    try {
+      let targetCampaign = c;
+      if (!targetCampaign.bodyHtml || !targetCampaign.subject) {
+        const full = await fetchCampaignById(c._id);
+        if (full && full.campaign) {
+          targetCampaign = full.campaign;
+        }
+      }
+
+      const newTitle = generateDuplicateTitle(targetCampaign.title, campaigns);
+
+      const duplicatedData = {
+        title: newTitle,
+        subject: targetCampaign.subject || '',
+        bodyHtml: targetCampaign.bodyHtml || '',
+        audienceMode: targetCampaign.audienceMode || 'filtered',
+        targetFilters: targetCampaign.targetFilters || {},
+        smtpGatewayId: targetCampaign.smtpGatewayId || null,
+        originalTitle: targetCampaign.title
+      };
+
+      sessionStorage.setItem('composerDuplicatedCampaign', JSON.stringify(duplicatedData));
+      toast.success('Campaign duplicated');
+
+      navigate('/composer', { state: { duplicatedCampaign: duplicatedData } });
+    } catch (err) {
+      console.error('Error duplicating campaign:', err);
+      toast.error('Failed to duplicate campaign');
+    }
+  };
 
   return (
     <div>
@@ -75,7 +120,7 @@ const Campaigns = () => {
                   <th>Failed</th>
                   <th>Dispatch Progress</th>
                   <th>Status</th>
-                  <th className="text-end">Action</th>
+                  <th className="text-end">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -120,10 +165,53 @@ const Campaigns = () => {
                           <StatusBadge status={c.status} type="campaign" />
                         </td>
                         <td className="text-end">
-                          <Link to={`/campaigns/${c._id}`} className="btn btn-sm btn-outline-custom">
-                            <Eye size={14} className="me-1" />
-                            View Tracker
-                          </Link>
+                          <div className="d-flex align-items-center justify-content-end gap-2">
+                            <Link to={`/campaigns/${c._id}`} className="btn btn-sm btn-outline-custom">
+                              <Eye size={14} className="me-1" />
+                              View Tracker
+                            </Link>
+
+                            <div className="dropdown position-relative campaign-actions-dropdown">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-custom px-2 py-1.5 rounded-3 d-inline-flex align-items-center justify-content-center"
+                                title="Actions"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenDropdownId(openDropdownId === c._id ? null : c._id);
+                                }}
+                              >
+                                <MoreVertical size={16} />
+                              </button>
+
+                              {openDropdownId === c._id && (
+                                <div
+                                  className="dropdown-menu show dropdown-menu-end shadow-sm border rounded-3 p-1 position-absolute"
+                                  style={{ right: 0, top: '100%', zIndex: 1050, minWidth: '170px' }}
+                                >
+                                  <Link
+                                    to={`/campaigns/${c._id}`}
+                                    className="dropdown-item rounded-2 py-1.5 px-2.5 fs-9 d-flex align-items-center gap-2"
+                                    onClick={() => setOpenDropdownId(null)}
+                                  >
+                                    <Eye size={14} className="text-muted" />
+                                    <span>View Tracker</span>
+                                  </Link>
+                                  <button
+                                    type="button"
+                                    className="dropdown-item rounded-2 py-1.5 px-2.5 fs-9 d-flex align-items-center gap-2 text-dark"
+                                    onClick={() => {
+                                      setOpenDropdownId(null);
+                                      handleDuplicate(c);
+                                    }}
+                                  >
+                                    <Copy size={14} className="text-primary" />
+                                    <span>Duplicate Campaign</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     );
