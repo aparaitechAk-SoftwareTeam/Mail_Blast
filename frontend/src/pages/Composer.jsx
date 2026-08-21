@@ -8,6 +8,7 @@ import { PERSONALIZATION_TAGS } from '../utils/constants';
 import { useToast } from '../context/ToastContext';
 import { formatDate } from '../utils/formatters';
 import { Send, Eye, Monitor, Smartphone, Mail, Sparkles, Filter, CheckCircle2, Users, Calendar, ShieldAlert, List, XCircle, RotateCcw, Server, Check, Copy } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
 
 import Button from '../components/ui/Button';
 import { Input, Select, Textarea } from '../components/ui/Input';
@@ -24,6 +25,38 @@ const Composer = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
+  const shouldReduceMotion = useReducedMotion();
+
+  const composerPageVariants = {
+    hidden: {
+      opacity: 0,
+      y: shouldReduceMotion ? 0 : 8
+    },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: {
+        duration: 0.22,
+        ease: [0.16, 1, 0.3, 1]
+      }
+    }
+  };
+
+  const fieldStaggerVariants = {
+    hidden: {
+      opacity: 0,
+      y: shouldReduceMotion ? 0 : 6
+    },
+    visible: (customDelay) => ({
+      opacity: 1,
+      y: 0,
+      transition: {
+        duration: 0.2,
+        delay: shouldReduceMotion ? 0 : customDelay,
+        ease: [0.16, 1, 0.3, 1]
+      }
+    })
+  };
 
   // Campaign Form State
   const [title, setTitle] = useState('');
@@ -338,7 +371,12 @@ const Composer = () => {
     <div>
       <Navbar title="Campaign Email Composer" />
 
-      <div className="page-container">
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        variants={composerPageVariants}
+        className="page-container"
+      >
         <form onSubmit={handleSubmitCampaign}>
           <div className="row g-4">
             {/* Left Column: Email Details & Content */}
@@ -357,9 +395,14 @@ const Composer = () => {
 
                   <div className="d-flex align-items-center gap-2 flex-wrap">
                     {duplicatedBanner && (
-                      <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1.5 rounded-pill fs-9 fw-semibold d-inline-flex align-items-center gap-1">
+                      <motion.span
+                        initial={{ opacity: 0, y: shouldReduceMotion ? 0 : -6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                        className="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1.5 rounded-pill fs-9 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-xs"
+                      >
                         <Copy size={12} strokeWidth={2.5} /> Duplicated from: {duplicatedBanner}
-                      </span>
+                      </motion.span>
                     )}
 
                     {loadedTemplateBanner && (
@@ -387,7 +430,14 @@ const Composer = () => {
                   </div>
                 </div>
 
-                <div className="mb-4">
+                <motion.div
+                  key={`title-field-${duplicatedBanner}-${selectedTemplateId}`}
+                  initial="hidden"
+                  animate="visible"
+                  custom={0}
+                  variants={fieldStaggerVariants}
+                  className="mb-4"
+                >
                   <Input
                     label="Internal Campaign Name"
                     name="title"
@@ -397,7 +447,16 @@ const Composer = () => {
                     required
                     placeholder="e.g. COEP Campus Placement Drive 2026 Invitation"
                   />
+                </motion.div>
 
+                <motion.div
+                  key={`subject-field-${duplicatedBanner}-${selectedTemplateId}`}
+                  initial="hidden"
+                  animate="visible"
+                  custom={0.05}
+                  variants={fieldStaggerVariants}
+                  className="mb-4"
+                >
                   <Input
                     label="Email Subject Line"
                     name="subject"
@@ -407,46 +466,54 @@ const Composer = () => {
                     required
                     placeholder="e.g. Invitation for Campus Placement Drive - {Name}"
                   />
-                </div>
+                </motion.div>
 
-                {/* Personalization Tag Toolbar */}
-                <div className="p-3 bg-light rounded-3 mb-4 border border-light-subtle">
-                  <div className="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-1">
-                    <label className="form-label small fw-semibold text-dark m-0 d-flex align-items-center gap-1.5">
-                      <Sparkles size={15} className="text-primary" />
-                      <span>Insert Personalization Tags</span>
-                    </label>
-                    <span className="text-muted fs-9">Click chip to inject into body</span>
+                <motion.div
+                  key={`body-field-${duplicatedBanner}-${selectedTemplateId}`}
+                  initial="hidden"
+                  animate="visible"
+                  custom={0.10}
+                  variants={fieldStaggerVariants}
+                >
+                  {/* Personalization Tag Toolbar */}
+                  <div className="p-3 bg-light rounded-3 mb-4 border border-light-subtle">
+                    <div className="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-1">
+                      <label className="form-label small fw-semibold text-dark m-0 d-flex align-items-center gap-1.5">
+                        <Sparkles size={15} className="text-primary" />
+                        <span>Insert Personalization Tags</span>
+                      </label>
+                      <span className="text-muted fs-9">Click chip to inject into body</span>
+                    </div>
+                    <div className="d-flex flex-wrap gap-2">
+                      {PERSONALIZATION_TAGS.map((t) => (
+                        <button
+                          type="button"
+                          key={t.tag}
+                          onClick={() => insertTag(t.tag)}
+                          className="btn btn-sm btn-white border shadow-2xs text-primary font-monospace fw-semibold fs-9 rounded-pill px-2.5 py-1 transition-all"
+                          title={`Click to insert ${t.tag}`}
+                        >
+                          {t.tag}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="d-flex flex-wrap gap-2">
-                    {PERSONALIZATION_TAGS.map((t) => (
-                      <button
-                        type="button"
-                        key={t.tag}
-                        onClick={() => insertTag(t.tag)}
-                        className="btn btn-sm btn-white border shadow-2xs text-primary font-monospace fw-semibold fs-9 rounded-pill px-2.5 py-1 transition-all"
-                        title={`Click to insert ${t.tag}`}
-                      >
-                        {t.tag}
-                      </button>
-                    ))}
-                  </div>
-                </div>
 
-                <div className="mb-2">
-                  <Textarea
-                    label="HTML Body Content"
-                    name="bodyHtml"
-                    value={bodyHtml}
-                    onChange={(e) => setBodyHtml(e.target.value)}
-                    error={errors.bodyHtml}
-                    rows={15}
-                    required
-                    placeholder="Type email body content or insert HTML..."
-                    className="font-monospace fs-9"
-                    style={{ minHeight: '320px' }}
-                  />
-                </div>
+                  <div className="mb-2">
+                    <Textarea
+                      label="HTML Body Content"
+                      name="bodyHtml"
+                      value={bodyHtml}
+                      onChange={(e) => setBodyHtml(e.target.value)}
+                      error={errors.bodyHtml}
+                      rows={15}
+                      required
+                      placeholder="Type email body content or insert HTML..."
+                      className="font-monospace fs-9"
+                      style={{ minHeight: '320px' }}
+                    />
+                  </div>
+                </motion.div>
               </div>
             </div>
 
@@ -980,7 +1047,7 @@ const Composer = () => {
             </div>
           </div>
         </Modal>
-      </div>
+      </motion.div>
     </div>
   );
 };

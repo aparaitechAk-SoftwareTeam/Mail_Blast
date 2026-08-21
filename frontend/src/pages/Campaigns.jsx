@@ -5,6 +5,7 @@ import { fetchCampaigns, fetchCampaignById, generateDuplicateTitle } from '../se
 import { formatDate } from '../utils/formatters';
 import { Eye, RefreshCw, MoreVertical, Copy } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { motion, useReducedMotion } from 'framer-motion';
 
 import Button from '../components/ui/Button';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -16,6 +17,7 @@ import { RefreshContext } from '../context/RefreshContext';
 const Campaigns = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const shouldReduceMotion = useReducedMotion();
   const { refreshKey } = useContext(RefreshContext);
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -197,17 +199,27 @@ const Campaigns = () => {
                                     <Eye size={14} className="text-muted" />
                                     <span>View Tracker</span>
                                   </Link>
-                                  <button
+                                  <motion.button
                                     type="button"
+                                    whileHover="hover"
+                                    whileTap="tap"
                                     className="dropdown-item rounded-2 py-1.5 px-2.5 fs-9 d-flex align-items-center gap-2 text-dark"
                                     onClick={() => {
                                       setOpenDropdownId(null);
                                       handleDuplicate(c);
                                     }}
                                   >
-                                    <Copy size={14} className="text-primary" />
+                                    <motion.span
+                                      variants={{
+                                        hover: shouldReduceMotion ? {} : { scale: 1.12, rotate: -4, x: 1, transition: { duration: 0.18, ease: "easeOut" } },
+                                        tap: shouldReduceMotion ? {} : { scale: 0.88, transition: { duration: 0.1, ease: "easeIn" } }
+                                      }}
+                                      style={{ display: 'inline-flex', alignItems: 'center' }}
+                                    >
+                                      <Copy size={14} className="text-primary" />
+                                    </motion.span>
                                     <span>Duplicate Campaign</span>
-                                  </button>
+                                  </motion.button>
                                 </div>
                               )}
                             </div>

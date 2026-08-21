@@ -13,6 +13,7 @@ import { AuthContext } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { formatDate } from '../utils/formatters';
 import { Play, RefreshCw, CheckCircle2, AlertOctagon, Clock, Users, ArrowLeft, XCircle, Activity, Info, Server, Copy } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
 
 import { RefreshContext } from '../context/RefreshContext';
 
@@ -23,6 +24,7 @@ const CampaignDetail = () => {
   const socket = useContext(SocketContext);
   const { refreshKey } = useContext(RefreshContext);
   const toast = useToast();
+  const shouldReduceMotion = useReducedMotion();
 
   const [campaign, setCampaign] = useState(null);
   const [logs, setLogs] = useState([]);
@@ -210,9 +212,24 @@ const CampaignDetail = () => {
 
           {user?.role !== 'Viewer' && (
             <div className="d-flex align-items-center gap-2">
-              <Button variant="outline" icon={Copy} onClick={handleDuplicate}>
-                Duplicate Campaign
-              </Button>
+              <motion.button
+                type="button"
+                whileHover="hover"
+                whileTap="tap"
+                className="btn btn-outline-custom d-inline-flex align-items-center gap-2 fw-semibold"
+                onClick={handleDuplicate}
+              >
+                <motion.span
+                  variants={{
+                    hover: shouldReduceMotion ? {} : { scale: 1.12, rotate: -4, x: 1, transition: { duration: 0.18, ease: "easeOut" } },
+                    tap: shouldReduceMotion ? {} : { scale: 0.88, transition: { duration: 0.1, ease: "easeIn" } }
+                  }}
+                  style={{ display: 'inline-flex', alignItems: 'center' }}
+                >
+                  <Copy size={18} />
+                </motion.span>
+                <span>Duplicate Campaign</span>
+              </motion.button>
 
               {campaign.status === 'Draft' || campaign.status === 'Scheduled' ? (
                 <Button variant="primary" icon={Play} onClick={() => setShowConfirmLaunch(true)}>
