@@ -193,6 +193,22 @@ const CampaignDetail = () => {
 
   const filteredLogs = logs.filter(l => !logFilter || l.status === logFilter);
 
+  const deliverySummary = (() => {
+    const map = new Map();
+    for (const log of logs) {
+      const gId = log.gatewayId ? String(log.gatewayId) : 'unassigned';
+      const gName = log.gatewayName || campaign?.smtpGatewayName || 'Primary Gateway';
+      if (!map.has(gId)) {
+        map.set(gId, { gatewayId: log.gatewayId, gatewayName: gName, sent: 0, failed: 0, total: 0 });
+      }
+      const entry = map.get(gId);
+      entry.total++;
+      if (log.status === 'Sent') entry.sent++;
+      else if (log.status === 'Failed' || log.status === 'Bounced' || log.status === 'Suppressed') entry.failed++;
+    }
+    return Array.from(map.values());
+  })();
+
   return (
     <div>
       <Navbar title={`Tracker: ${campaign.title}`} />
@@ -304,31 +320,66 @@ const CampaignDetail = () => {
           </div>
         </div>
 
-        {/* SMTP Gateway Infrastructure Banner */}
-        <div className="card border-0 shadow-sm rounded-4 bg-surface p-3 mb-4">
-          <div className="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        {/* Multi-Gateway Delivery Breakdown Summary Card (Requirement 12 & 14) */}
+        <div className="card border-0 shadow-sm rounded-4 bg-surface p-4 mb-4">
+          <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom flex-wrap gap-2">
             <div className="d-flex align-items-center gap-2.5">
-              <div className="p-2 rounded-3 bg-primary-subtle text-primary" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="p-2 rounded-3 bg-primary-subtle text-primary">
                 <Server size={18} />
               </div>
               <div>
-                <span className="text-muted fs-9 d-block">SMTP GATEWAY</span>
-                <span className="fw-bold text-dark fs-7">{campaign.smtpGatewayName || 'Brevo Gateway 01'}</span>
-              </div>
-            </div>
-
-            <div className="d-flex align-items-center gap-3">
-              <div className="text-end">
-                <span className="text-muted fs-9 d-block">GATEWAY STATUS</span>
-                <span className="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-0.5 rounded-pill fs-9">
-                  ● Connected
+                <h6 className="fw-bold text-dark m-0 fs-6">DELIVERY INFRASTRUCTURE</h6>
+                <span className="text-muted fs-9">
+                  {campaign.deliveryMethod === 'multi' ? 'Multi-Gateway Delivery Pool' : `Single Gateway: ${campaign.smtpGatewayName || 'Primary Gateway'}`}
                 </span>
               </div>
-              <div className="text-end">
-                <span className="text-muted fs-9 d-block">DISPATCHER</span>
-                <span className="fw-semibold text-dark fs-8">{campaign.createdByName || 'Recruiter'}</span>
-              </div>
             </div>
+            <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-1.5 rounded-pill fs-9 fw-bold">
+              {campaign.deliveryMethod === 'multi' ? `Multi-Gateway (${deliverySummary.length} Gateways)` : (campaign.smtpGatewayName || 'Single Gateway')}
+            </span>
+          </div>
+
+          <div className="table-responsive">
+            <table className="table custom-table align-middle m-0 fs-9">
+              <thead>
+                <tr>
+                  <th>Gateway Name</th>
+                  <th>Status</th>
+                  <th className="text-center">Sent</th>
+                  <th className="text-center">Failed</th>
+                  <th className="text-end">Total Allocated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deliverySummary.length === 0 ? (
+                  <tr>
+                    <td colSpan="5" className="text-muted py-3 text-center">No email logs dispatched yet.</td>
+                  </tr>
+                ) : (
+                  deliverySummary.map((item, idx) => {
+                    const isDone = item.sent + item.failed === item.total && item.total > 0;
+                    const isSending = item.sent + item.failed > 0 && !isDone;
+                    return (
+                      <tr key={idx}>
+                        <td className="fw-semibold text-dark">{item.gatewayName}</td>
+                        <td>
+                          {isDone ? (
+                            <span className="badge bg-success-subtle text-success border border-success-subtle px-2.5 py-1 rounded-pill fw-bold">✓ Complete</span>
+                          ) : isSending ? (
+                            <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1 rounded-pill fw-bold">● Sending</span>
+                          ) : (
+                            <span className="badge bg-light text-muted border px-2.5 py-1 rounded-pill fw-bold">○ Pending</span>
+                          )}
+                        </td>
+                        <td className="text-center text-success fw-bold">{item.sent} sent</td>
+                        <td className="text-center text-danger fw-bold">{item.failed} failed</td>
+                        <td className="text-end fw-bold text-dark">{item.total}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 

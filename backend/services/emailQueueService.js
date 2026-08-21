@@ -328,6 +328,26 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
         gatewayName: gateway?.gatewayName
       });
 
+      const gatewayStatuses = logs.map(l => ({
+        gatewayId: l.gatewayId,
+        gatewayName: l.gatewayName || 'Primary Gateway',
+        status: l.status
+      })).reduce((acc, curr) => {
+        const key = String(curr.gatewayId || 'unassigned');
+        if (!acc[key]) {
+          acc[key] = { gatewayId: curr.gatewayId, gatewayName: curr.gatewayName, total: 0, sent: 0, failed: 0 };
+        }
+        acc[key].total++;
+        if (curr.status === 'Sent') acc[key].sent++;
+        else if (curr.status === 'Failed' || curr.status === 'Bounced' || curr.status === 'Suppressed') acc[key].failed++;
+        return acc;
+      }, {});
+
+      const gatewayStatusList = Object.values(gatewayStatuses).map(g => ({
+        ...g,
+        status: (g.sent + g.failed === g.total && g.total > 0) ? 'Complete' : (g.sent + g.failed > 0 ? 'Sending' : 'Pending')
+      }));
+
       emitCampaignProgress(cid, {
         campaignId: cid,
         sentCount: sent,
@@ -337,8 +357,9 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
         progressPct,
         currentRecipient: log.recipientEmail,
         status: 'Sending',
-        gatewayId: gateway?._id,
-        gatewayName: gateway?.gatewayName
+        gatewayId: successfulGw?._id || gateway?._id,
+        gatewayName: successfulGw?.gatewayName || gateway?.gatewayName,
+        gatewayStatuses: gatewayStatusList
       });
     }
 
@@ -353,6 +374,22 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
       await campaign.save();
     }
 
+    const finalGwStatuses = Object.values(
+      logs.reduce((acc, curr) => {
+        const key = String(curr.gatewayId || 'unassigned');
+        if (!acc[key]) {
+          acc[key] = { gatewayId: curr.gatewayId, gatewayName: curr.gatewayName || 'Primary Gateway', total: 0, sent: 0, failed: 0 };
+        }
+        acc[key].total++;
+        if (curr.status === 'Sent') acc[key].sent++;
+        else if (curr.status === 'Failed' || curr.status === 'Bounced' || curr.status === 'Suppressed') acc[key].failed++;
+        return acc;
+      }, {})
+    ).map(g => ({
+      ...g,
+      status: (g.sent + g.failed === g.total && g.total > 0) ? 'Complete' : (g.sent + g.failed > 0 ? 'Sending' : 'Pending')
+    }));
+
     emitCampaignProgress(cid, {
       campaignId: cid,
       sentCount: campaign.sentCount,
@@ -362,7 +399,8 @@ const processCampaignQueue = async (campaignId, retryOnlyFailed = false) => {
       progressPct: Math.round(((sent + failed) / campaign.totalRecipients) * 100),
       status: finalStatus,
       gatewayId: gateway?._id,
-      gatewayName: gateway?.gatewayName
+      gatewayName: gateway?.gatewayName,
+      gatewayStatuses: finalGwStatuses
     });
 
   } catch (error) {

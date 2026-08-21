@@ -55,17 +55,45 @@ const getCampaignById = async (req, res) => {
 
     if (!campaign) return res.status(404).json({ message: 'Campaign not found' });
 
-    res.json({ campaign, logs });
+    // Actual EmailLog aggregation grouped by gatewayId / gatewayName (Requirement 12)
+    const gwMap = new Map();
+    for (const log of logs) {
+      const gId = log.gatewayId ? String(log.gatewayId) : 'unassigned';
+      const gName = log.gatewayName || 'Primary Gateway';
+      if (!gwMap.has(gId)) {
+        gwMap.set(gId, { gatewayId: log.gatewayId || null, gatewayName: gName, total: 0, sent: 0, failed: 0, pending: 0 });
+      }
+      const entry = gwMap.get(gId);
+      entry.total++;
+      if (log.status === 'Sent') entry.sent++;
+      else if (log.status === 'Failed' || log.status === 'Bounced' || log.status === 'Suppressed') entry.failed++;
+      else entry.pending++;
+    }
+
+    const deliverySummary = Array.from(gwMap.values());
+
+    res.json({ campaign, logs, deliverySummary });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-const SmtpGateway = require('../models/SmtpGateway');
+const { ensureGatewayDailyReset, getGatewayDailyUsage } = require('./settingsController');
 
 const createCampaign = async (req, res) => {
   try {
-    const { title, subject, bodyHtml, templateId, targetFilters, scheduledAt, audienceMode = 'filtered', smtpGatewayId } = req.body;
+    const { 
+      title, 
+      subject, 
+      bodyHtml, 
+      templateId, 
+      targetFilters, 
+      scheduledAt, 
+      audienceMode = 'filtered', 
+      smtpGatewayId,
+      deliveryMethod = 'single',
+      selectedGatewayIds = []
+    } = req.body;
 
     if (!title || !subject || !bodyHtml) {
       return res.status(400).json({ message: 'Campaign title, subject, and email body are required' });
@@ -89,7 +117,6 @@ const createCampaign = async (req, res) => {
           baselineTimestamp = lastCampaign.completedAt || lastCampaign.createdAt;
           query.createdAt = { $gt: baselineTimestamp };
         } else {
-          // No baseline campaign exists
           query._id = null;
         }
       }
@@ -126,24 +153,109 @@ const createCampaign = async (req, res) => {
       targetStudents = stList;
     }
 
-    // Resolve selected SMTP Gateway
-    let selectedGateway = null;
-    if (smtpGatewayId) {
+    const totalRecipients = targetStudents.length;
+
+    // Resolve & Validate Gateways for Multi vs Single Delivery Method
+    let gatewayBuckets = [];
+    let primaryGateway = null;
+
+    if (deliveryMethod === 'multi') {
+      const gIds = Array.isArray(selectedGatewayIds) ? selectedGatewayIds.filter(Boolean) : [];
+      let rawGateways = [];
+
       if (isMongo) {
-        selectedGateway = await SmtpGateway.findById(smtpGatewayId);
+        rawGateways = await SmtpGateway.find({ _id: { $in: gIds } }).sort({ createdAt: 1 });
       } else {
-        selectedGateway = (store.smtpGateways || []).find(g => String(g._id) === String(smtpGatewayId));
+        rawGateways = (store.smtpGateways || []).filter(g => gIds.map(String).includes(String(g._id)));
       }
-    }
-    if (!selectedGateway) {
-      if (isMongo) {
-        selectedGateway = await SmtpGateway.findOne({ isActive: true }).sort({ createdAt: 1 });
-      } else {
-        selectedGateway = (store.smtpGateways || []).find(g => g.isActive !== false);
+
+      // Filter for active & non-disconnected gateways
+      for (const gw of rawGateways) {
+        const gwDoc = await ensureGatewayDailyReset(gw);
+        if (!gwDoc) continue;
+
+        const isActive = gwDoc.isActive !== false;
+        const isConnected = gwDoc.connectionStatus !== 'Disconnected';
+        if (isActive && isConnected) {
+          const quota = gwDoc.dailyQuota || 300;
+          const used = gwDoc.dailyUsed || 0;
+          const rem = Math.max(0, quota - used);
+          gatewayBuckets.push({
+            gateway: gwDoc,
+            remainingCapacity: rem,
+            allocatedCount: 0
+          });
+        }
+      }
+
+      const totalAvailableCapacity = gatewayBuckets.reduce((sum, b) => sum + b.remainingCapacity, 0);
+
+      if (totalRecipients > 0 && totalAvailableCapacity < totalRecipients) {
+        return res.status(400).json({
+          message: `INSUFFICIENT DELIVERY CAPACITY. Campaign requested ${totalRecipients} recipients, but selected gateways have only ${totalAvailableCapacity} total remaining capacity today.`
+        });
+      }
+
+      if (gatewayBuckets.length > 0) {
+        primaryGateway = gatewayBuckets[0].gateway;
+      }
+    } else {
+      // Single Gateway mode
+      let selectedGateway = null;
+      if (smtpGatewayId) {
+        if (isMongo) {
+          selectedGateway = await SmtpGateway.findById(smtpGatewayId);
+        } else {
+          selectedGateway = (store.smtpGateways || []).find(g => String(g._id) === String(smtpGatewayId));
+        }
+      }
+      if (!selectedGateway) {
+        if (isMongo) {
+          selectedGateway = await SmtpGateway.findOne({ isActive: true }).sort({ createdAt: 1 });
+        } else {
+          selectedGateway = (store.smtpGateways || []).find(g => g.isActive !== false);
+        }
+      }
+
+      if (selectedGateway) {
+        const gwDoc = await ensureGatewayDailyReset(selectedGateway);
+        const quota = gwDoc?.dailyQuota || 300;
+        const used = gwDoc?.dailyUsed || 0;
+        const rem = Math.max(0, quota - used);
+
+        if (totalRecipients > 0 && rem < totalRecipients) {
+          return res.status(400).json({
+            message: `INSUFFICIENT DELIVERY CAPACITY. Campaign requested ${totalRecipients} recipients, but gateway "${gwDoc?.gatewayName}" has only ${rem} remaining capacity today.`
+          });
+        }
+
+        primaryGateway = gwDoc;
+        gatewayBuckets = [{
+          gateway: gwDoc,
+          remainingCapacity: rem,
+          allocatedCount: 0
+        }];
       }
     }
 
-    const totalRecipients = targetStudents.length;
+    // Fallback if no gateway buckets resolved
+    if (gatewayBuckets.length === 0) {
+      let defaultGw;
+      if (isMongo) {
+        defaultGw = await SmtpGateway.findOne({ isActive: true }).sort({ createdAt: 1 });
+      } else {
+        defaultGw = (store.smtpGateways || []).find(g => g.isActive !== false);
+      }
+      if (defaultGw) {
+        primaryGateway = defaultGw;
+        gatewayBuckets = [{
+          gateway: defaultGw,
+          remainingCapacity: 9999,
+          allocatedCount: 0
+        }];
+      }
+    }
+
     const isImmediate = !scheduledAt;
     const initialStatus = isImmediate ? 'Sending' : 'Scheduled';
 
@@ -156,8 +268,10 @@ const createCampaign = async (req, res) => {
         templateId: templateId || null,
         createdBy: req.user._id,
         createdByName: req.user.name,
-        smtpGatewayId: selectedGateway ? selectedGateway._id : null,
-        smtpGatewayName: selectedGateway ? selectedGateway.gatewayName : 'Primary Gateway',
+        smtpGatewayId: primaryGateway ? primaryGateway._id : null,
+        smtpGatewayName: primaryGateway ? primaryGateway.gatewayName : 'Primary Gateway',
+        deliveryMethod: deliveryMethod || 'single',
+        selectedGatewayIds: gatewayBuckets.map(b => b.gateway._id),
         targetFilters: filters,
         audienceMode: audienceMode || 'filtered',
         baselineCampaignId: lastCampaign ? lastCampaign._id : null,
@@ -171,15 +285,26 @@ const createCampaign = async (req, res) => {
         startedAt: isImmediate ? new Date() : null
       });
 
-      // Create Email Logs for each student
-      const emailLogsDocs = targetStudents.map(st => ({
-        campaignId: campaign._id,
-        studentId: st._id,
-        recipientEmail: st.email,
-        recipientName: st.name,
-        subject: subject,
-        status: 'Pending'
-      }));
+      // Deterministically allocate recipients to gateways based on remaining capacity
+      const emailLogsDocs = targetStudents.map(st => {
+        // Find bucket with available allocation
+        let targetBucket = gatewayBuckets.find(b => b.allocatedCount < b.remainingCapacity);
+        if (!targetBucket) {
+          targetBucket = gatewayBuckets[0];
+        }
+        targetBucket.allocatedCount++;
+
+        return {
+          campaignId: campaign._id,
+          studentId: st._id,
+          recipientEmail: st.email,
+          recipientName: st.name,
+          subject: subject,
+          gatewayId: targetBucket.gateway._id,
+          gatewayName: targetBucket.gateway.gatewayName,
+          status: 'Pending'
+        };
+      });
 
       await EmailLog.insertMany(emailLogsDocs);
     } else {
@@ -192,6 +317,10 @@ const createCampaign = async (req, res) => {
         templateId: templateId || null,
         createdBy: req.user._id,
         createdByName: req.user.name,
+        smtpGatewayId: primaryGateway ? primaryGateway._id : null,
+        smtpGatewayName: primaryGateway ? primaryGateway.gatewayName : 'Primary Gateway',
+        deliveryMethod: deliveryMethod || 'single',
+        selectedGatewayIds: gatewayBuckets.map(b => b.gateway._id),
         targetFilters: filters,
         totalRecipients,
         sentCount: 0,
@@ -205,6 +334,12 @@ const createCampaign = async (req, res) => {
       store.campaigns.unshift(campaign);
 
       targetStudents.forEach((st, idx) => {
+        let targetBucket = gatewayBuckets.find(b => b.allocatedCount < b.remainingCapacity);
+        if (!targetBucket) {
+          targetBucket = gatewayBuckets[0];
+        }
+        targetBucket.allocatedCount++;
+
         store.emailLogs.push({
           _id: `log-${Date.now()}-${idx}`,
           campaignId: campaign._id,
@@ -212,6 +347,8 @@ const createCampaign = async (req, res) => {
           recipientEmail: st.email,
           recipientName: st.name,
           subject: subject,
+          gatewayId: targetBucket.gateway._id,
+          gatewayName: targetBucket.gateway.gatewayName,
           status: 'Pending',
           createdAt: new Date()
         });

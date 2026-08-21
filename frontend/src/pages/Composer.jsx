@@ -99,6 +99,8 @@ const Composer = () => {
   // Gateway Pool state
   const [availableGateways, setAvailableGateways] = useState([]);
   const [selectedGatewayId, setSelectedGatewayId] = useState('');
+  const [deliveryMethod, setDeliveryMethod] = useState('single'); // 'single' | 'multi'
+  const [selectedGatewayIds, setSelectedGatewayIds] = useState([]);
 
   const DRAFT_KEY = 'studentEmailBlast_composer_draft';
 
@@ -183,7 +185,9 @@ const Composer = () => {
       const data = await fetchSmtpGateways();
       if (data.gateways) {
         setAvailableGateways(data.gateways);
-        const activeGw = data.gateways.find(g => g.isActive !== false);
+        const activeConnected = data.gateways.filter(g => g.isActive !== false && g.connectionStatus !== 'Disconnected');
+        setSelectedGatewayIds(activeConnected.map(g => String(g._id)));
+        const activeGw = activeConnected[0] || data.gateways[0];
         if (activeGw) {
           setSelectedGatewayId(activeGw._id);
         }
@@ -318,10 +322,25 @@ const Composer = () => {
     }
   };
 
+  // Dynamic Capacity Calculations (Requirement 2 & 3)
+  const selectedGatewayObj = availableGateways.find(g => String(g._id) === String(selectedGatewayId));
+  const singleGatewayCap = selectedGatewayObj ? Math.max(0, (selectedGatewayObj.dailyQuota || 300) - (selectedGatewayObj.dailyUsed || 0)) : 0;
+
+  const multiGatewayObjects = availableGateways.filter(g => selectedGatewayIds.includes(String(g._id)) && g.isActive !== false && g.connectionStatus !== 'Disconnected');
+  const multiGatewayCap = multiGatewayObjects.reduce((sum, g) => sum + Math.max(0, (g.dailyQuota || 300) - (g.dailyUsed || 0)), 0);
+
+  const availableDeliveryCapacity = deliveryMethod === 'multi' ? multiGatewayCap : singleGatewayCap;
+  const isCapacitySufficient = recipientCount === 0 || recipientCount <= availableDeliveryCapacity;
+  const recipientDeficit = Math.max(0, recipientCount - availableDeliveryCapacity);
+
   const handleSubmitCampaign = (e) => {
     e.preventDefault();
     if (!validateComposer()) {
       toast.error('Please fix validation errors before reviewing your campaign');
+      return;
+    }
+    if (!isCapacitySufficient) {
+      toast.error('INSUFFICIENT DELIVERY CAPACITY. Please reduce recipients or adjust gateway selection.');
       return;
     }
     setShowConfirmModal(true);
@@ -338,7 +357,9 @@ const Composer = () => {
         targetFilters: filters,
         audienceMode,
         scheduledAt: scheduledAt || null,
-        smtpGatewayId: selectedGatewayId || null
+        smtpGatewayId: selectedGatewayId || null,
+        deliveryMethod,
+        selectedGatewayIds: deliveryMethod === 'multi' ? selectedGatewayIds : [selectedGatewayId]
       });
 
       localStorage.removeItem(DRAFT_KEY);
@@ -749,27 +770,129 @@ const Composer = () => {
                   </div>
                 )}
 
-                {/* SMTP Gateway Selection */}
-                <div className="pt-3 border-top">
-                  <div className="d-flex align-items-center justify-content-between mb-2">
-                    <div className="d-flex align-items-center gap-1.5">
+                {/* SMTP Gateway & Delivery Method Selection */}
+                <div className="pt-3 border-top mb-3">
+                  <div className="mb-2">
+                    <label className="form-label small fw-semibold text-dark m-0 d-flex align-items-center gap-1.5">
                       <Server size={15} className="text-primary" />
-                      <span className="fw-semibold text-dark fs-9">SMTP Gateway</span>
-                    </div>
+                      <span>Delivery Method</span>
+                    </label>
+                    <span className="text-muted fs-9 d-block mt-0.5">Select how emails should be dispatched across authorized SMTP gateways.</span>
                   </div>
-                  <select
-                    className="form-select form-select-sm form-select-custom w-100 rounded-3"
-                    value={selectedGatewayId}
-                    onChange={(e) => setSelectedGatewayId(e.target.value)}
-                    style={{ height: '38px', borderRadius: '8px', fontSize: '0.85rem' }}
-                  >
-                    {availableGateways.map(g => (
-                      <option key={g._id} value={g._id} disabled={g.isActive === false}>
-                        {g.gatewayName}{g.isActive === false ? ' [Disabled]' : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-muted fs-9 d-block mt-1">Admin-selected gateway for campaign dispatch.</span>
+
+                  {/* Single / Multi Toggle Pills */}
+                  <div className="btn-group w-100 mb-3" role="group">
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryMethod('single')}
+                      className={`btn btn-sm py-2 fw-semibold ${deliveryMethod === 'single' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                    >
+                      Single Gateway
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryMethod('multi')}
+                      className={`btn btn-sm py-2 fw-semibold ${deliveryMethod === 'multi' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                    >
+                      Multi-Gateway Delivery
+                    </button>
+                  </div>
+
+                  {deliveryMethod === 'single' ? (
+                    <div>
+                      <label className="form-label fs-9 fw-semibold text-secondary mb-1">Select Single SMTP Gateway</label>
+                      <select
+                        className="form-select form-select-sm form-select-custom w-100 rounded-3"
+                        value={selectedGatewayId}
+                        onChange={(e) => setSelectedGatewayId(e.target.value)}
+                        style={{ height: '38px', borderRadius: '8px', fontSize: '0.85rem' }}
+                      >
+                        {availableGateways.map(g => (
+                          <option key={g._id} value={g._id} disabled={g.isActive === false || g.connectionStatus === 'Disconnected'}>
+                            {g.gatewayName}{g.isActive === false ? ' [Disabled]' : g.connectionStatus === 'Disconnected' ? ' [Disconnected]' : ` (${Math.max(0, (g.dailyQuota || 300) - (g.dailyUsed || 0))} remaining)`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="form-label fs-9 fw-semibold text-secondary mb-1">Select Gateways for Multi-Gateway Delivery</label>
+                      <div className="d-flex flex-column gap-2 mb-3">
+                        {availableGateways.map(g => {
+                          const isEligible = g.isActive !== false && g.connectionStatus !== 'Disconnected';
+                          const rem = Math.max(0, (g.dailyQuota || 300) - (g.dailyUsed || 0));
+                          const isChecked = selectedGatewayIds.includes(String(g._id));
+
+                          return (
+                            <label
+                              key={g._id}
+                              className={`d-flex align-items-center justify-content-between p-2.5 rounded-3 border transition-all ${
+                                !isEligible ? 'bg-light opacity-50 cursor-not-allowed' : isChecked ? 'bg-primary-subtle border-primary' : 'bg-white border-light-subtle'
+                              }`}
+                            >
+                              <div className="d-flex align-items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked && isEligible}
+                                  disabled={!isEligible}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedGatewayIds(prev => [...prev, String(g._id)]);
+                                    } else {
+                                      setSelectedGatewayIds(prev => prev.filter(id => id !== String(g._id)));
+                                    }
+                                  }}
+                                  className="form-check-input m-0"
+                                />
+                                <span className="fs-9 fw-semibold text-dark">{g.gatewayName}</span>
+                              </div>
+                              <span className={`badge fs-9 fw-semibold ${rem > 0 ? 'bg-white text-dark border' : 'bg-danger-subtle text-danger'}`}>
+                                {rem} remaining
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+
+                      {/* Available Delivery Capacity Card */}
+                      <div className="p-3 bg-light rounded-3 border border-light-subtle mb-2">
+                        <div className="fs-9 fw-bold text-dark text-uppercase tracking-wider mb-2">Available Delivery Capacity</div>
+                        {multiGatewayObjects.map(g => (
+                          <div key={g._id} className="d-flex justify-content-between fs-9 text-muted mb-1">
+                            <span>{g.gatewayName}</span>
+                            <span className="fw-semibold text-dark">{Math.max(0, (g.dailyQuota || 300) - (g.dailyUsed || 0))} remaining</span>
+                          </div>
+                        ))}
+                        <hr className="my-1.5" />
+                        <div className="d-flex justify-content-between fs-9 fw-bold text-dark">
+                          <span>TOTAL</span>
+                          <span className="text-primary">{multiGatewayCap} remaining</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recipient Capacity Validation Box */}
+                  <div className={`mt-3 p-3 rounded-3 border ${isCapacitySufficient ? 'bg-success-subtle border-success-subtle text-dark' : 'bg-danger-subtle border-danger-subtle text-dark'}`}>
+                    {isCapacitySufficient ? (
+                      <div className="fs-9 d-flex flex-column gap-1">
+                        <div className="fw-bold text-success d-flex align-items-center gap-1.5">
+                          <CheckCircle2 size={16} /> Capacity Available
+                        </div>
+                        <div className="text-secondary fs-9">✓ {recipientCount} recipients ready</div>
+                        <div className="text-secondary fs-9">✓ {deliveryMethod === 'multi' ? `${multiGatewayObjects.length} gateways available` : 'Single Gateway available'} ({availableDeliveryCapacity} capacity)</div>
+                      </div>
+                    ) : (
+                      <div className="fs-9 d-flex flex-column gap-1">
+                        <div className="fw-bold text-danger d-flex align-items-center gap-1.5">
+                          <ShieldAlert size={16} /> INSUFFICIENT DELIVERY CAPACITY
+                        </div>
+                        <div className="fw-semibold text-dark">{recipientCount} recipients requested</div>
+                        <div className="text-danger fw-semibold">{availableDeliveryCapacity} emails available</div>
+                        <div className="text-muted fs-9 mt-1">Remaining {recipientDeficit} recipients cannot be sent today. Please reduce recipients or wait for daily quota reset.</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Schedule Launch Section */}
@@ -819,13 +942,13 @@ const Composer = () => {
                   <p className="text-muted fs-9 mb-2.5">Ready to review your campaign before dispatch?</p>
                   <Button
                     type="submit"
-                    variant="primary"
+                    variant={isCapacitySufficient ? 'primary' : 'danger'}
                     icon={Send}
-                    disabled={submitting || recipientCount === 0}
+                    disabled={submitting || recipientCount === 0 || !isCapacitySufficient}
                     loading={submitting ? 'Creating Campaign...' : false}
                     className="w-100 py-3 rounded-3 fw-bold fs-8 shadow-sm"
                   >
-                    Review & Launch Campaign
+                    {isCapacitySufficient ? 'Review & Launch Campaign' : 'Insufficient Capacity'}
                   </Button>
                 </div>
               </div>
@@ -1035,8 +1158,18 @@ const Composer = () => {
                 <span className="fw-semibold text-dark">{subject}</span>
               </div>
               <div className="list-group-item d-flex justify-content-between py-2.5">
+                <span className="text-muted">Delivery Method:</span>
+                <span className="badge bg-primary-subtle text-primary rounded-pill px-2.5 fw-bold">
+                  {deliveryMethod === 'multi' ? `Multi-Gateway (${multiGatewayObjects.length} Gateways)` : `Single Gateway (${selectedGatewayObj?.gatewayName || 'Primary'})`}
+                </span>
+              </div>
+              <div className="list-group-item d-flex justify-content-between py-2.5">
                 <span className="text-muted">Target Audience:</span>
                 <span className="badge bg-primary rounded-pill px-2.5">{recipientCount} Students</span>
+              </div>
+              <div className="list-group-item d-flex justify-content-between py-2.5">
+                <span className="text-muted">Available Capacity:</span>
+                <span className="fw-semibold text-dark">{availableDeliveryCapacity} Emails</span>
               </div>
               <div className="list-group-item d-flex justify-content-between py-2.5">
                 <span className="text-muted">Launch Mode:</span>

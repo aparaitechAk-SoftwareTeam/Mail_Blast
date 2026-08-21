@@ -9,6 +9,8 @@ const campaignSchema = new mongoose.Schema({
   createdByName: { type: String, default: '' },
   smtpGatewayId: { type: mongoose.Schema.Types.ObjectId, ref: 'SmtpGateway', default: null },
   smtpGatewayName: { type: String, default: '' },
+  deliveryMethod: { type: String, enum: ['single', 'multi'], default: 'single' },
+  selectedGatewayIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'SmtpGateway' }],
   targetFilters: {
     college: { type: String, default: '' },
     branch: { type: String, default: '' },

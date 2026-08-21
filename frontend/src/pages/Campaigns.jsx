@@ -148,7 +148,18 @@ const Campaigns = () => {
                           <Link to={`/campaigns/${c._id}`} className="fw-bold text-dark text-decoration-none">
                             {c.title}
                           </Link>
-                          <div className="small text-muted">{formatDate(c.createdAt)}</div>
+                          <div className="d-flex align-items-center gap-1.5 mt-0.5 flex-wrap">
+                            <span className="small text-muted">{formatDate(c.createdAt)}</span>
+                            {c.deliveryMethod === 'multi' ? (
+                              <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-0.5 fs-9 rounded-pill fw-bold">
+                                Multi-Gateway ({c.selectedGatewayIds?.length || 3} gateways)
+                              </span>
+                            ) : (
+                              <span className="badge bg-light text-secondary border px-2 py-0.5 fs-9 rounded-pill fw-normal">
+                                {c.smtpGatewayName || 'Single Gateway'}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="fw-medium">{c.createdByName || 'Recruiter'}</td>
                         <td className="fw-semibold">{c.totalRecipients}</td>
